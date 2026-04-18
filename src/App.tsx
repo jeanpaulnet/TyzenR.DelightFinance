@@ -33,7 +33,7 @@ function MainApp() {
   const [hasLanded, setHasLanded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tempKey, setTempKey] = useState('');
-  const APP_VERSION = '1.3';
+  const APP_VERSION = '1.4.1';
 
   const allTabs = useMemo(() => [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: !!menuAccess?.dashboard },

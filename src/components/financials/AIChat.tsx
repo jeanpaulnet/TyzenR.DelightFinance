@@ -204,18 +204,18 @@ export default function AIChat() {
             
             <div className="flex flex-wrap gap-2 justify-center mt-6 max-w-md">
               <button 
-                onClick={() => handleSend(undefined, "What is budget for April?")}
+                onClick={() => handleSend(undefined, "Who edited Transactions?")}
                 disabled={isTyping}
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-[11px] font-medium hover:bg-white hover:border-[#86BC24] hover:text-[#86BC24] transition-all"
               >
-                What is budget for April?
+                Who edited Transactions?
               </button>
               <button 
-                onClick={() => handleSend(undefined, "Why Trends exists for April?")}
+                onClick={() => handleSend(undefined, "How many transactions are audted for April month?")}
                 disabled={isTyping}
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-[11px] font-medium hover:bg-white hover:border-[#86BC24] hover:text-[#86BC24] transition-all"
               >
-                Why Trends exists for April?
+                How many transactions are audted for April month?
               </button>
             </div>
           </div>
