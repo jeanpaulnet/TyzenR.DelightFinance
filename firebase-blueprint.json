@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "Expense": {
+      "title": "Expense",
+      "description": "An individual expense record, stored with encrypted description and sensitive details.",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "accountId": { "type": "string" },
+        "encryptedData": { "type": "string", "description": "AES-256 encrypted string containing description and other metadata." },
+        "userId": { "type": "string" }
+      },
+      "required": ["amount", "category", "date", "accountId", "encryptedData", "userId"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "Budget limits for a specific category and period.",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["category", "amount", "month", "year", "userId"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "A financial account (e.g., Savings, Credit Card).",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "balance": { "type": "number" },
+        "type": { "type": "string", "enum": ["savings", "checking", "credit", "investment"] },
+        "userId": { "type": "string" }
+      },
+      "required": ["name", "balance", "type", "userId"]
+    },
+    "Investment": {
+      "title": "Investment",
+      "description": "Tracking of stocks, funds, or other assets.",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "quantity": { "type": "number" },
+        "purchasePrice": { "type": "number" },
+        "assetClass": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["symbol", "quantity", "purchasePrice", "assetClass", "userId"]
+    },
+    "UserConfig": {
+      "title": "User Config",
+      "description": "Configuration, roles, and permissions for a user.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["Admin", "User"] },
+        "menuAccess": { 
+          "type": "object", 
+          "properties": {
+            "dashboard": { "type": "boolean" },
+            "transactions": { "type": "boolean" },
+            "budgets": { "type": "boolean" },
+            "ai": { "type": "boolean" },
+            "users": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["email", "role", "menuAccess"]
+    }
+  },
+  "firestore": {
+    "users_config/{userId}": {
+      "schema": "UserConfig",
+      "description": "Configuration and permissions for users."
+    },
+    "users/{userId}/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "User's encrypted expenses."
+    },
+    "users/{userId}/budgets/{budgetId}": {
+      "schema": "Budget",
+      "description": "User's budgets."
+    },
+    "users/{userId}/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "User's financial accounts."
+    },
+    "users/{userId}/investments/{investmentId}": {
+      "schema": "Investment",
+      "description": "User's investment holdings."
+    }
+  }
+}

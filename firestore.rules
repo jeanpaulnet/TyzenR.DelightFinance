@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Functions ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // Auth-based Admin check (Email whitelist + Database Role check)
+    // NOTE: This handles both the bootstrap admin and delegated admins.
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == "jeanpaulva@gmail.com" ||
+        get(/databases/$(database)/documents/users_config/$(request.auth.uid)).data.role == "Admin"
+      );
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- UserConfig Validation ---
+    function isValidUserConfig(data) {
+      return data.email is string && data.email.size() <= 200
+        && data.name is string && data.name.size() <= 200
+        && data.role in ['Admin', 'User']
+        && data.menuAccess is map
+        && data.menuAccess.keys().hasOnly(['dashboard', 'transactions', 'budgets', 'ai', 'users'])
+        && data.menuAccess.dashboard is bool
+        && data.menuAccess.transactions is bool
+        && data.menuAccess.budgets is bool
+        && data.menuAccess.ai is bool
+        && data.menuAccess.users is bool;
+    }
+
+    // users_config Rules
+    match /users_config/{docId} {
+      // Users can read any config (for search/display if needed, though usually restricted to themselves or admins)
+      // Here we allow reading any to support looking up invited users by email-slug.
+      allow read: if isSignedIn();
+      
+      allow create: if isSignedIn() && isValidUserConfig(incoming()) && (
+        // Admin can create any config
+        isAdmin() || 
+        // User can create THEIR OWN config, but ONLY as a 'User' role
+        (isOwner(docId) && incoming().role == 'User' && incoming().menuAccess.users == false)
+      );
+      
+      allow update: if isSignedIn() && (
+        // Admin can update anything
+        isAdmin() || 
+        // User can update their own NAME or EMAIL, but NOT their role or menu access
+        (isOwner(docId) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'updatedAt']) &&
+         incoming().role == existing().role &&
+         incoming().menuAccess == existing().menuAccess)
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    // --- Expense Rules ---
+    function isValidExpense(data) {
+      return data.amount is number 
+        && data.category is string && data.category.size() <= 100
+        && data.date is string && data.date.size() <= 50
+        && data.accountId is string && data.accountId.size() <= 100
+        && data.encryptedData is string && data.encryptedData.size() <= 5000
+        && data.userId == request.auth.uid;
+    }
+
+    match /users/{userId}/expenses/{expenseId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(expenseId) && isValidExpense(incoming());
+      allow update: if isOwner(userId) && isValidExpense(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // --- Budget Rules ---
+    function isValidBudget(data) {
+      return data.category is string && data.category.size() <= 100
+        && data.amount is number
+        && data.month is number && data.month >= 1 && data.month <= 12
+        && data.year is number
+        && data.userId == request.auth.uid;
+    }
+
+    match /users/{userId}/budgets/{budgetId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(budgetId) && isValidBudget(incoming());
+      allow update: if isOwner(userId) && isValidBudget(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // --- Account Rules ---
+    function isValidAccount(data) {
+      return data.name is string && data.name.size() <= 100
+        && data.balance is number
+        && data.type in ['savings', 'checking', 'credit', 'investment']
+        && data.userId == request.auth.uid;
+    }
+
+    match /users/{userId}/accounts/{accountId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(accountId) && isValidAccount(incoming());
+      allow update: if isOwner(userId) && isValidAccount(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // --- Investment Rules ---
+    function isValidInvestment(data) {
+      return data.symbol is string && data.symbol.size() <= 20
+        && data.quantity is number
+        && data.purchasePrice is number
+        && data.assetClass is string && data.assetClass.size() <= 100
+        && data.userId == request.auth.uid;
+    }
+
+    match /users/{userId}/investments/{investmentId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(investmentId) && isValidInvestment(incoming());
+      allow update: if isOwner(userId) && isValidInvestment(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+  }
+}
