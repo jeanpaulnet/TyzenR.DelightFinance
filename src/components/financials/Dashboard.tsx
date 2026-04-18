@@ -183,34 +183,6 @@ export default function Dashboard() {
             <ExpenseLineChart key={`line-${summary.lineChartData.length}`} data={summary.lineChartData} height={280} />
           </div>
         </div>
-
-        {/* RISKS */}
-        <div className="dashboard-card lg:col-span-1">
-          <p className="stat-label">RISKS</p>
-          <div className="space-y-4 mt-4">
-            <div className="flex gap-3 items-start text-sm">
-              <span className="w-2 h-2 rounded-full bg-[#EF4444] mt-1.5 shrink-0" />
-              <div>
-                <p className="font-bold text-[#1E293B]">High Variance</p>
-                <p className="text-[#64748B] text-xs">Utility bill is 40% higher than historical avg.</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-start text-sm">
-              <span className="w-2 h-2 rounded-full bg-[#F59E0B] mt-1.5 shrink-0" />
-              <div>
-                <p className="font-bold text-[#1E293B]">Subscription Bloat</p>
-                <p className="text-[#64748B] text-xs">3 overlapping streaming services detected.</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-start text-sm">
-              <span className="w-2 h-2 rounded-full bg-[#10B981] mt-1.5 shrink-0" />
-              <div>
-                <p className="font-bold text-[#1E293B]">Investment Opp</p>
-                <p className="text-[#64748B] text-xs">Excess cash exceeds liquidity buffer.</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 text-indigo-900">
@@ -236,6 +208,36 @@ export default function Dashboard() {
           </div>
           <div className="h-[320px]">
              <ComputeChart key={`compute-${summary.periodData.length}-${startDate}-${endDate}`} data={summary.periodData} height={320} />
+          </div>
+        </div>
+      </div>
+
+      {/* RISKS at the bottom, full width */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="dashboard-card shadow-sm">
+          <p className="stat-label mb-6">RISKS</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="flex gap-4 items-start p-4 bg-red-50/30 rounded-xl border border-red-100/50">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#EF4444] mt-1.5 shrink-0" />
+              <div>
+                <p className="font-bold text-slate-900 tracking-tight">High Variance</p>
+                <p className="text-slate-500 text-xs mt-1 leading-relaxed">Utility bill is 40% higher than historical average based on seasonal trends.</p>
+              </div>
+            </div>
+            <div className="flex gap-4 items-start p-4 bg-amber-50/30 rounded-xl border border-amber-100/50">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] mt-1.5 shrink-0" />
+              <div>
+                <p className="font-bold text-slate-900 tracking-tight">Subscription Bloat</p>
+                <p className="text-slate-500 text-xs mt-1 leading-relaxed">3 overlapping streaming services detected in recent transaction history.</p>
+              </div>
+            </div>
+            <div className="flex gap-4 items-start p-4 bg-emerald-50/30 rounded-xl border border-emerald-100/50">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] mt-1.5 shrink-0" />
+              <div>
+                <p className="font-bold text-slate-900 tracking-tight">Investment Opportunity</p>
+                <p className="text-slate-500 text-xs mt-1 leading-relaxed">Excess cash reserves detected above your defined liquidity safety buffer.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
