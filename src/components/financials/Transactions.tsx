@@ -43,6 +43,8 @@ export default function Transactions() {
   // CRUD state
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingDescription, setDeletingDescription] = useState('');
   const [historyResourceId, setHistoryResourceId] = useState<string | null>(null);
   const [historyTitle, setHistoryTitle] = useState('');
   
@@ -200,9 +202,11 @@ export default function Transactions() {
     }
   };
 
-  const handleDelete = async (id: string, description: string) => {
-    if (!user || !window.confirm(`Are you sure you want to delete "${description}"?`)) return;
+  const handleDelete = async () => {
+    if (!user || !deletingId) return;
     try {
+      const id = deletingId;
+      const description = deletingDescription;
       await deleteDoc(doc(db, 'users', user.uid, 'expenses', id));
       await logEvent({
         userId: user.uid,
@@ -213,6 +217,7 @@ export default function Transactions() {
         resourceId: id,
         resourceName: description
       });
+      setDeletingId(null);
     } catch (err) {
       console.error(err);
     }
@@ -252,6 +257,7 @@ export default function Transactions() {
       notes: exp.notes || '',
       audited: !!exp.audited
     });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const resetForm = () => {
@@ -387,7 +393,7 @@ export default function Transactions() {
                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
                 />
               </div>
-                <div className="flex items-center gap-2 pt-6">
+                <div className="md:col-span-1 flex items-center gap-2 pt-6">
                   <input 
                     type="checkbox"
                     id="audited"
@@ -399,9 +405,16 @@ export default function Transactions() {
                      Audited
                   </label>
                 </div>
-                <div className="flex items-end">
-                  <button type="submit" className="w-full btn-primary py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
-                    {editingId ? 'Update Ledger' : 'Commit Entry'}
+                <div className="md:col-span-4 flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
+                  <button 
+                    type="button"
+                    onClick={() => { setEditingId(null); setIsAdding(false); resetForm(); }}
+                    className="px-6 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary px-8 py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
+                    {editingId ? 'Save Changes' : 'Commit Entry'}
                   </button>
                 </div>
             </form>
@@ -502,7 +515,7 @@ export default function Transactions() {
                     </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex justify-end gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={() => { setHistoryResourceId(exp.id); setHistoryTitle(exp.description); }}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
@@ -518,7 +531,7 @@ export default function Transactions() {
                         <Edit2 size={14} />
                       </button>
                       <button 
-                        onClick={() => handleDelete(exp.id, exp.description)}
+                        onClick={() => { setDeletingId(exp.id); setDeletingDescription(exp.description); }}
                         className="p-1.5 text-slate-400 hover:text-[#EF4444] hover:bg-red-50 rounded transition-colors"
                         title="Delete"
                       >
@@ -550,6 +563,48 @@ export default function Transactions() {
         title={historyTitle}
         resourceId={historyResourceId || undefined}
       />
+
+      <AnimatePresence>
+        {deletingId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeletingId(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Transaction?</h3>
+              <p className="text-slate-500 text-sm mb-8">
+                Are you sure you want to remove <span className="font-bold text-slate-700">"{deletingDescription}"</span>? This action is permanent and will be logged in the audit trail.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setDeletingId(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-widest hover:bg-slate-50 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

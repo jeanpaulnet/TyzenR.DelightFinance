@@ -22,7 +22,7 @@ import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import Dashboard from './components/financials/Dashboard';
 import BudgetManager from './components/financials/BudgetManager';
-import AIAssistant from './components/financials/AIAssistant';
+import AIChat from './components/financials/AIChat';
 import Transactions from './components/financials/Transactions';
 import Users from './components/financials/Users';
 import { Users as UsersIcon } from 'lucide-react';
@@ -33,13 +33,13 @@ function MainApp() {
   const [hasLanded, setHasLanded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tempKey, setTempKey] = useState('');
-  const APP_VERSION = '1.1';
+  const APP_VERSION = '1.3';
 
   const allTabs = useMemo(() => [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: !!menuAccess?.dashboard },
     { id: 'transactions', label: 'Transactions', icon: Activity, visible: !!menuAccess?.transactions },
     { id: 'budgets', label: 'Categories', icon: Wallet, visible: !!menuAccess?.budgets },
-    { id: 'ai', label: 'AI Assistant', icon: MessageSquare, visible: !!menuAccess?.ai },
+    { id: 'ai', label: 'AI Chat', icon: MessageSquare, visible: !!menuAccess?.ai },
     { id: 'users', label: 'Users', icon: UsersIcon, visible: userRole === 'Admin' || !!menuAccess?.users },
   ], [menuAccess, userRole]);
 
@@ -89,7 +89,10 @@ function MainApp() {
              
              <div className="relative z-10 flex items-center gap-3">
                 <div className="w-10 h-10 bg-[#86BC24] rounded flex items-center justify-center font-bold text-xl tracking-tighter shadow-lg shadow-green-500/20">D</div>
-                <span className="font-bold text-2xl tracking-tighter uppercase">Delight <span className="font-light text-slate-400">Finance</span></span>
+                <div className="flex flex-col">
+                  <span className="font-bold text-2xl tracking-tighter uppercase">Delight <span className="font-light text-slate-400">Finance</span></span>
+                  <span className="text-[10px] text-slate-500 font-medium tracking-widest -mt-1 uppercase">v{APP_VERSION}</span>
+                </div>
              </div>
 
              <div className="relative z-10 space-y-6">
@@ -220,7 +223,7 @@ function MainApp() {
               <div className="w-8 h-8 min-w-[32px] bg-[#86BC24] text-white rounded flex items-center justify-center font-bold text-lg leading-none">D</div>
               <div className="flex flex-col">
                 <span className="font-bold text-xl tracking-tighter uppercase whitespace-nowrap">Delight <span className="font-light text-slate-400">Finance</span></span>
-                <span className="text-[9px] font-bold text-[#86BC24] tracking-[0.2em] -mt-1 uppercase opacity-80">Version {APP_VERSION}</span>
+                <span className="text-[9px] font-bold text-slate-400 tracking-[0.2em] -mt-1 uppercase">Version {APP_VERSION}</span>
               </div>
             </div>
           </div>
@@ -298,7 +301,7 @@ function MainApp() {
               {activeTab === 'dashboard' && <Dashboard />}
               {activeTab === 'transactions' && <Transactions />}
               {activeTab === 'budgets' && <BudgetManager />}
-              {activeTab === 'ai' && <AIAssistant />}
+              {activeTab === 'ai' && <AIChat />}
               {activeTab === 'users' && <Users />}
             </motion.div>
           </AnimatePresence>

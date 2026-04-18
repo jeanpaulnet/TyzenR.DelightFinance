@@ -20,7 +20,7 @@ interface Message {
   };
 }
 
-export default function AIAssistant() {
+export default function AIChat() {
   const { finData, encryptionKey, user } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -154,7 +154,7 @@ export default function AIAssistant() {
             <Bot size={20} />
           </div>
           <div>
-            <h2 className="font-bold text-[#1E293B] uppercase text-xs tracking-wider">Delight AI Engine</h2>
+            <h2 className="font-bold text-[#1E293B] uppercase text-xs tracking-wider">Delight AI Chat</h2>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-[#10B981] rounded-full" />
               <span className="text-[10px] text-[#86BC24] font-bold underline cursor-pointer">Source Traceability Enabled [2 Files]</span>
@@ -198,8 +198,8 @@ export default function AIAssistant() {
               <MessageSquare size={48} />
             </div>
             <div className="max-w-xs">
-              <p className="text-[#1E293B] font-bold text-sm">Delight Intelligence Engine</p>
-              <p className="text-[#64748B] text-xs mt-1">Ready for encrypted financial analysis. Ask about variances, forecasts, or risks.</p>
+              <p className="text-[#1E293B] font-bold text-sm">Delight Intelligence Chat</p>
+              <p className="text-[#64748B] text-xs mt-1">Secure multi-modal chat interface active. Ask about variances, forecasts, or risks.</p>
             </div>
             
             <div className="flex flex-wrap gap-2 justify-center mt-6 max-w-md">
@@ -244,7 +244,10 @@ export default function AIAssistant() {
                   ? "bg-[#86BC24] text-white border-[#86BC24] rounded-lg rounded-tr-none shadow-sm" 
                   : "bg-white text-[#1E293B] border-[#E2E8F0] rounded-lg rounded-tl-none"
               )}>
-                <div className="text-[13px] leading-relaxed prose prose-slate prose-sm max-w-none prose-invert">
+                <div className={cn(
+                  "text-[13px] leading-relaxed prose prose-slate prose-sm max-w-none",
+                  m.role === 'user' ? "prose-invert" : ""
+                )}>
                   <ReactMarkdown>{m.content}</ReactMarkdown>
                 </div>
                 {m.metadata && (
