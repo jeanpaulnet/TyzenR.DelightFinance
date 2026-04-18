@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../AppContext';
 import { analyzeFinancialHealth, generateSummaryReport } from '../../lib/gemini';
 import { decryptPayload } from '../../lib/encryption';
+import { logEvent } from '../../lib/audit';
 import { MessageSquare, Send, Bot, User, Loader2, Download, Trash2, HelpCircle, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
@@ -12,10 +13,15 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  metadata?: {
+    correlationId: string;
+    dataSnapshot: string;
+    modelUsed: string;
+  };
 }
 
 export default function AIAssistant() {
-  const { finData, encryptionKey } = useApp();
+  const { finData, encryptionKey, user } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -33,14 +39,15 @@ export default function AIAssistant() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSend = async (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent, directMessage?: string) => {
     e?.preventDefault();
-    if (!input.trim() || isTyping) return;
+    const messageContent = directMessage || input;
+    if (!messageContent.trim() || isTyping || !user) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: messageContent,
       timestamp: new Date()
     };
 
@@ -54,7 +61,7 @@ export default function AIAssistant() {
       const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
       const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
 
-      const aiResponse = await analyzeFinancialHealth({
+      const aiResults = await analyzeFinancialHealth({
         ...finData,
         expenses: decryptedExpenses,
         summary: {
@@ -64,13 +71,23 @@ export default function AIAssistant() {
           topCategory: 'Assorted', // can refine
           investmentValue
         }
-      }, input);
+      }, messageContent);
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'VIEW',
+        resourceType: 'ai_assistant',
+        details: `Queried assistant: "${messageContent.slice(0, 50)}..."`
+      });
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: aiResponse || "I encountered an error analyzing your data.",
-        timestamp: new Date()
+        content: typeof aiResults === 'string' ? aiResults : aiResults.text || "I encountered an error analyzing your data.",
+        timestamp: new Date(),
+        metadata: typeof aiResults === 'object' ? aiResults.metadata : undefined
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -90,7 +107,7 @@ export default function AIAssistant() {
       const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
       const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
 
-      const aiResponse = await generateSummaryReport({
+      const aiResults = await generateSummaryReport({
         ...finData,
         expenses: decryptedExpenses,
         summary: {
@@ -105,8 +122,9 @@ export default function AIAssistant() {
       const assistantMsg: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: aiResponse || "I couldn't generate a summary report at this time.",
-        timestamp: new Date()
+        content: typeof aiResults === 'string' ? aiResults : aiResults.text || "I couldn't generate a summary report at this time.",
+        timestamp: new Date(),
+        metadata: typeof aiResults === 'object' ? aiResults.metadata : undefined
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -183,6 +201,23 @@ export default function AIAssistant() {
               <p className="text-[#1E293B] font-bold text-sm">Delight Intelligence Engine</p>
               <p className="text-[#64748B] text-xs mt-1">Ready for encrypted financial analysis. Ask about variances, forecasts, or risks.</p>
             </div>
+            
+            <div className="flex flex-wrap gap-2 justify-center mt-6 max-w-md">
+              <button 
+                onClick={() => handleSend(undefined, "What is budget for April?")}
+                disabled={isTyping}
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-[11px] font-medium hover:bg-white hover:border-[#86BC24] hover:text-[#86BC24] transition-all"
+              >
+                What is budget for April?
+              </button>
+              <button 
+                onClick={() => handleSend(undefined, "Why Trends exists for April?")}
+                disabled={isTyping}
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-[11px] font-medium hover:bg-white hover:border-[#86BC24] hover:text-[#86BC24] transition-all"
+              >
+                Why Trends exists for April?
+              </button>
+            </div>
           </div>
         )}
 
@@ -212,6 +247,18 @@ export default function AIAssistant() {
                 <div className="text-[13px] leading-relaxed prose prose-slate prose-sm max-w-none prose-invert">
                   <ReactMarkdown>{m.content}</ReactMarkdown>
                 </div>
+                {m.metadata && (
+                  <div className="mt-3 pt-3 border-t border-slate-100/20 text-[9px] font-mono text-slate-400 space-y-0.5">
+                    <div className="flex justify-between">
+                      <span className="uppercase opacity-70">Audit ID:</span>
+                      <span className="text-white/60">{m.metadata.correlationId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="uppercase opacity-70">Data Ver:</span>
+                      <span className="text-white/60">{m.metadata.dataSnapshot}</span>
+                    </div>
+                  </div>
+                )}
                 <span className="text-[9px] opacity-60 block mt-2 font-mono uppercase">
                   {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>

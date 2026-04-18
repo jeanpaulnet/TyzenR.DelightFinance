@@ -10,9 +10,11 @@
         "date": { "type": "string", "format": "date-time" },
         "accountId": { "type": "string" },
         "encryptedData": { "type": "string", "description": "AES-256 encrypted string containing description and other metadata." },
-        "userId": { "type": "string" }
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["amount", "category", "date", "accountId", "encryptedData", "userId"]
+      "required": ["amount", "category", "date", "accountId", "encryptedData", "userId", "createdAt"]
     },
     "Budget": {
       "title": "Budget",
@@ -23,9 +25,11 @@
         "amount": { "type": "number" },
         "month": { "type": "number" },
         "year": { "type": "number" },
-        "userId": { "type": "string" }
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["category", "amount", "month", "year", "userId"]
+      "required": ["category", "amount", "month", "year", "userId", "createdAt"]
     },
     "Account": {
       "title": "Account",
@@ -35,9 +39,11 @@
         "name": { "type": "string" },
         "balance": { "type": "number" },
         "type": { "type": "string", "enum": ["savings", "checking", "credit", "investment"] },
-        "userId": { "type": "string" }
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "balance", "type", "userId"]
+      "required": ["name", "balance", "type", "userId", "createdAt"]
     },
     "Investment": {
       "title": "Investment",
@@ -48,9 +54,11 @@
         "quantity": { "type": "number" },
         "purchasePrice": { "type": "number" },
         "assetClass": { "type": "string" },
-        "userId": { "type": "string" }
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["symbol", "quantity", "purchasePrice", "assetClass", "userId"]
+      "required": ["symbol", "quantity", "purchasePrice", "assetClass", "userId", "createdAt"]
     },
     "UserConfig": {
       "title": "User Config",
@@ -69,12 +77,35 @@
             "ai": { "type": "boolean" },
             "users": { "type": "boolean" }
           }
-        }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["email", "role", "menuAccess"]
+      "required": ["email", "role", "menuAccess", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "A record of an action taken by a user within the system.",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "action": { "type": "string", "enum": ["CREATE", "UPDATE", "DELETE", "VIEW", "IMPORT", "EXPORT", "INVITE", "LOGIN"] },
+        "resourceType": { "type": "string", "enum": ["expense", "budget", "account", "investment", "user_config", "dashboard", "ai_assistant"] },
+        "resourceId": { "type": "string" },
+        "resourceName": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["timestamp", "userId", "action", "resourceType"]
     }
   },
   "firestore": {
+    "audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System-wide audit logs."
+    },
     "users_config/{userId}": {
       "schema": "UserConfig",
       "description": "Configuration and permissions for users."

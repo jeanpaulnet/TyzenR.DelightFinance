@@ -4,6 +4,7 @@ import { useApp } from '../../AppContext';
 import { encryptPayload } from '../../lib/encryption';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { logEvent } from '../../lib/audit';
 import { Upload, X, CheckCircle2, AlertCircle, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
@@ -88,9 +89,21 @@ export default function ExpenseUpload() {
               accountId,
               encryptedData,
               userId: user.uid,
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
             });
             count++;
+          }
+          
+          if (count > 0) {
+            await logEvent({
+              userId: user.uid,
+              userEmail: user.email || 'unknown',
+              userName: user.displayName || 'Delight User',
+              action: 'IMPORT',
+              resourceType: 'expense',
+              details: `Batch imported ${count} transactions via CSV`
+            });
           }
           
           setFeedback({ type: 'success', message: `Successfully imported ${count} expenses.` });

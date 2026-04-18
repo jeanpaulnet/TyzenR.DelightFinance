@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../AppContext';
 import { decryptPayload } from '../../lib/encryption';
 import { formatCurrency, cn } from '../../lib/utils';
+import { logEvent } from '../../lib/audit';
 import { 
   ArrowUpRight, 
   ArrowDownRight,
@@ -17,7 +18,7 @@ import { ExpenseLineChart, PortfolioPieChart, VarianceTrendChart, ComputeChart }
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
 
 export default function Dashboard() {
-  const { finData, encryptionKey } = useApp();
+  const { finData, encryptionKey, user } = useApp();
   
   // Date range state - default to YTD (start of year to end of current month)
   const now = new Date();
@@ -26,6 +27,18 @@ export default function Dashboard() {
   
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
+
+  useEffect(() => {
+    if (user) {
+      logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'VIEW',
+        resourceType: 'dashboard'
+      });
+    }
+  }, [user]);
 
   const decryptedExpenses = useMemo(() => {
     if (!encryptionKey) return [];

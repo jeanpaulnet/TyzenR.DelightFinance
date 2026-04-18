@@ -98,7 +98,7 @@ export const ComputeChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
           <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
           
           <Area type="monotone" dataKey="actual" fill="url(#colorTrend)" stroke="#6366F1" name="Spending Trend" strokeWidth={2} />
-          <Bar dataKey="overrun" fill="#F43F5E" name="Budget Overrun" radius={[4, 4, 0, 0]} barSize={24} />
+          <Line type="monotone" dataKey="overrun" stroke="#F43F5E" name="Budget Overrun" strokeWidth={3} dot={{ fill: '#F43F5E', r: 4 }} activeDot={{ r: 6 }} />
           <Line type="monotone" dataKey="variance" stroke="#F59E0B" name="Target Variance" strokeWidth={2} dot={true} />
         </ComposedChart>
       </ResponsiveContainer>

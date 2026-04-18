@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../AppContext';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { Wallet, Plus, Trash2, Edit2, Check, X, Target, Info, Activity } from 'lucide-react';
+import { logEvent } from '../../lib/audit';
+import { Wallet, Plus, Trash2, Edit2, Check, X, Target, Info, Activity, History } from 'lucide-react';
 import { formatCurrency } from '../../lib/utils';
 import { motion } from 'motion/react';
+import HistoryModal from './HistoryModal';
 
 export default function BudgetManager() {
   const { finData, user } = useApp();
@@ -12,19 +14,46 @@ export default function BudgetManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBudget, setEditBudget] = useState({ category: '', amount: 0 });
   const [isAdding, setIsAdding] = useState(false);
+  const [historyResourceId, setHistoryResourceId] = useState<string | null>(null);
+  const [historyTitle, setHistoryTitle] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'VIEW',
+        resourceType: 'budget'
+      });
+    }
+  }, [user]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     try {
-      await addDoc(collection(db, 'users', user.uid, 'budgets'), {
+      const budgetDoc = await addDoc(collection(db, 'users', user.uid, 'budgets'), {
         category: newBudget.category,
         amount: newBudget.amount,
         month: new Date().getMonth() + 1,
         year: new Date().getFullYear(),
         userId: user.uid,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'CREATE',
+        resourceType: 'budget',
+        resourceId: budgetDoc.id,
+        resourceName: newBudget.category,
+        details: `Created budget for ${newBudget.category} with target ${formatCurrency(newBudget.amount)}`
+      });
+
       setNewBudget({ category: '', amount: 0 });
       setIsAdding(false);
     } catch (err) {
@@ -38,18 +67,40 @@ export default function BudgetManager() {
     try {
       await updateDoc(doc(db, 'users', user.uid, 'budgets', editingId), {
         category: editBudget.category,
-        amount: editBudget.amount
+        amount: editBudget.amount,
+        updatedAt: new Date().toISOString()
       });
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'UPDATE',
+        resourceType: 'budget',
+        resourceId: editingId,
+        resourceName: editBudget.category,
+        details: `Updated budget for ${editBudget.category} to ${formatCurrency(editBudget.amount)}`
+      });
+
       setEditingId(null);
     } catch (err) {
       console.error(err);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!user) return;
+  const handleDelete = async (id: string, category: string) => {
+    if (!user || !window.confirm(`Delete budget category "${category}"?`)) return;
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'budgets', id));
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'DELETE',
+        resourceType: 'budget',
+        resourceId: id,
+        resourceName: category
+      });
     } catch (err) {
       console.error(err);
     }
@@ -137,10 +188,17 @@ export default function BudgetManager() {
             ) : (
               <>
                 <div className="absolute top-0 right-0 p-2 flex gap-1">
+                   <button 
+                     onClick={() => { setHistoryResourceId(b.id); setHistoryTitle(b.category); }}
+                     className="p-1 text-slate-300 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100"
+                     title="View History"
+                   >
+                      <History size={14} />
+                   </button>
                    <button onClick={() => startEdit(b)} className="p-1 text-slate-300 hover:text-[#86BC24] transition-colors opacity-0 group-hover:opacity-100">
                       <Edit2 size={14} />
                    </button>
-                   <button onClick={() => handleDelete(b.id)} className="p-1 text-slate-300 hover:text-[#EF4444] transition-colors opacity-0 group-hover:opacity-100">
+                   <button onClick={() => handleDelete(b.id, b.category)} className="p-1 text-slate-300 hover:text-[#EF4444] transition-colors opacity-0 group-hover:opacity-100">
                       <Trash2 size={14} />
                    </button>
                 </div>
@@ -187,6 +245,12 @@ export default function BudgetManager() {
           </div>
         )}
       </div>
+      <HistoryModal 
+        isOpen={!!historyResourceId}
+        onClose={() => setHistoryResourceId(null)}
+        title={historyTitle}
+        resourceId={historyResourceId || undefined}
+      />
     </div>
   );
 }

@@ -50,7 +50,18 @@ export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: st
       },
     });
 
-    return response.text;
+    const correlationId = `TRC-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+    const dataHash = `DTA-${data.expenses.length}e-${data.budgets.length}b`; // Simple hash for reproducibility check
+
+    return {
+      text: response.text,
+      metadata: {
+        correlationId,
+        dataSnapshot: dataHash,
+        timestamp: new Date().toISOString(),
+        modelUsed: model
+      }
+    };
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
     return "I'm sorry, I couldn't perform the analysis right now. Please try again later.";

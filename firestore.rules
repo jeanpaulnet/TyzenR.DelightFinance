@@ -22,6 +22,19 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isValidAuditLog(data) {
+      return data.timestamp is string
+        && data.userId == request.auth.uid
+        && data.action in ["CREATE", "UPDATE", "DELETE", "VIEW", "IMPORT", "EXPORT", "INVITE", "LOGIN"]
+        && data.resourceType in ["expense", "budget", "account", "investment", "user_config", "dashboard", "ai_assistant"];
+    }
+
+    // --- Audit Log Rules ---
+    match /audit_logs/{logId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidAuditLog(incoming());
+      allow update, delete: if false; // Audit logs are immutable
+    }
 
     // --- UserConfig Validation ---
     function isValidUserConfig(data) {
@@ -34,7 +47,9 @@ service cloud.firestore {
         && data.menuAccess.transactions is bool
         && data.menuAccess.budgets is bool
         && data.menuAccess.ai is bool
-        && data.menuAccess.users is bool;
+        && data.menuAccess.users is bool
+        && (data.get('createdAt', null) == null || data.createdAt is string)
+        && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
 
     // users_config Rules
@@ -70,7 +85,9 @@ service cloud.firestore {
         && data.date is string && data.date.size() <= 50
         && data.accountId is string && data.accountId.size() <= 100
         && data.encryptedData is string && data.encryptedData.size() <= 5000
-        && data.userId == request.auth.uid;
+        && data.userId == request.auth.uid
+        && (data.get('createdAt', null) == null || data.createdAt is string)
+        && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
 
     match /users/{userId}/expenses/{expenseId} {
@@ -86,7 +103,9 @@ service cloud.firestore {
         && data.amount is number
         && data.month is number && data.month >= 1 && data.month <= 12
         && data.year is number
-        && data.userId == request.auth.uid;
+        && data.userId == request.auth.uid
+        && (data.get('createdAt', null) == null || data.createdAt is string)
+        && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
 
     match /users/{userId}/budgets/{budgetId} {
@@ -101,7 +120,9 @@ service cloud.firestore {
       return data.name is string && data.name.size() <= 100
         && data.balance is number
         && data.type in ['savings', 'checking', 'credit', 'investment']
-        && data.userId == request.auth.uid;
+        && data.userId == request.auth.uid
+        && (data.get('createdAt', null) == null || data.createdAt is string)
+        && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
 
     match /users/{userId}/accounts/{accountId} {
@@ -117,7 +138,9 @@ service cloud.firestore {
         && data.quantity is number
         && data.purchasePrice is number
         && data.assetClass is string && data.assetClass.size() <= 100
-        && data.userId == request.auth.uid;
+        && data.userId == request.auth.uid
+        && (data.get('createdAt', null) == null || data.createdAt is string)
+        && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
 
     match /users/{userId}/investments/{investmentId} {

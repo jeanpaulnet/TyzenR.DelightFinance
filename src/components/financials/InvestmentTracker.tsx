@@ -42,7 +42,8 @@ export default function InvestmentTracker() {
       await addDoc(collection(db, 'users', user.uid, 'investments'), {
         ...newInv,
         userId: user.uid,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
       setNewInv({ symbol: '', quantity: 0, purchasePrice: 0, assetClass: 'Stock' });
       setShowAdd(false);

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
+import { logEvent } from './lib/audit';
 import { collection, query, onSnapshot, getDocs, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface MenuAccess {
@@ -71,6 +72,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
+      if (u) {
+        logEvent({
+          userId: u.uid,
+          userEmail: u.email || 'unknown',
+          userName: u.displayName || 'Delight User',
+          action: 'LOGIN',
+          resourceType: 'user_config'
+        });
+      }
     });
     return unsub;
   }, []);
@@ -116,6 +126,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           name: initialName,
           role: initialRole,
           menuAccess: initialMenu,
+          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
         
@@ -136,7 +147,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             month: new Date().getMonth() + 1,
             year: new Date().getFullYear(),
             userId: user.uid,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
           });
         }
       }

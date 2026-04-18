@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../AppContext';
 import { decryptPayload, encryptPayload } from '../../lib/encryption';
 import { formatCurrency, cn } from '../../lib/utils';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { logEvent } from '../../lib/audit';
 import { 
   Calendar as CalendarIcon, 
   Search, 
@@ -17,10 +18,12 @@ import {
   Download,
   MoreVertical,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ExpenseUpload from './ExpenseUpload';
+import HistoryModal from './HistoryModal';
 
 export default function Transactions() {
   const { finData, encryptionKey, user } = useApp();
@@ -39,6 +42,21 @@ export default function Transactions() {
   // CRUD state
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [historyResourceId, setHistoryResourceId] = useState<string | null>(null);
+  const [historyTitle, setHistoryTitle] = useState('');
+  
+  useEffect(() => {
+    if (user) {
+      logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'VIEW',
+        resourceType: 'expense'
+      });
+    }
+  }, [user]);
+
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     amount: '',
@@ -110,14 +128,26 @@ export default function Transactions() {
       
       const encryptedData = encryptPayload(payload, encryptionKey);
       
-      await addDoc(collection(db, 'users', user.uid, 'expenses'), {
+      const newDoc = await addDoc(collection(db, 'users', user.uid, 'expenses'), {
         amount: parseFloat(formData.amount),
         category: formData.category.toLowerCase().trim(),
         date: new Date(formData.date).toISOString(),
         accountId: 'default',
         encryptedData,
         userId: user.uid,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'CREATE',
+        resourceType: 'expense',
+        resourceId: newDoc.id,
+        resourceName: formData.description,
+        details: `Created transaction for ${formatCurrency(parseFloat(formData.amount))} in ${formData.category}`
       });
       
       setIsAdding(false);
@@ -144,7 +174,19 @@ export default function Transactions() {
         amount: parseFloat(formData.amount),
         category: formData.category.toLowerCase().trim(),
         date: new Date(formData.date).toISOString(),
-        encryptedData
+        encryptedData,
+        updatedAt: new Date().toISOString()
+      });
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'UPDATE',
+        resourceType: 'expense',
+        resourceId: editingId,
+        resourceName: formData.description,
+        details: `Updated amount to ${formatCurrency(parseFloat(formData.amount))} and category to ${formData.category}`
       });
       
       setEditingId(null);
@@ -154,10 +196,19 @@ export default function Transactions() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!user || !window.confirm('Are you sure you want to delete this transaction?')) return;
+  const handleDelete = async (id: string, description: string) => {
+    if (!user || !window.confirm(`Are you sure you want to delete "${description}"?`)) return;
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'expenses', id));
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'DELETE',
+        resourceType: 'expense',
+        resourceId: id,
+        resourceName: description
+      });
     } catch (err) {
       console.error(err);
     }
@@ -387,14 +438,23 @@ export default function Transactions() {
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
+                        onClick={() => { setHistoryResourceId(exp.id); setHistoryTitle(exp.description); }}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                        title="View History"
+                      >
+                        <History size={14} />
+                      </button>
+                      <button 
                         onClick={() => startEdit(exp)}
                         className="p-1.5 text-slate-400 hover:text-[#86BC24] hover:bg-green-50 rounded transition-colors"
+                        title="Edit"
                       >
                         <Edit2 size={14} />
                       </button>
                       <button 
-                        onClick={() => handleDelete(exp.id)}
+                        onClick={() => handleDelete(exp.id, exp.description)}
                         className="p-1.5 text-slate-400 hover:text-[#EF4444] hover:bg-red-50 rounded transition-colors"
+                        title="Delete"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -418,6 +478,12 @@ export default function Transactions() {
           </div>
         )}
       </div>
+      <HistoryModal 
+        isOpen={!!historyResourceId}
+        onClose={() => setHistoryResourceId(null)}
+        title={historyTitle}
+        resourceId={historyResourceId || undefined}
+      />
     </div>
   );
 }
