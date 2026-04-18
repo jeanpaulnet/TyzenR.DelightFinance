@@ -19,7 +19,8 @@ import {
   MoreVertical,
   ChevronLeft,
   ChevronRight,
-  History
+  History,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ExpenseUpload from './ExpenseUpload';
@@ -62,7 +63,8 @@ export default function Transactions() {
     amount: '',
     category: '',
     description: '',
-    notes: ''
+    notes: '',
+    audited: false
   });
 
   const decryptedExpenses = useMemo(() => {
@@ -135,6 +137,7 @@ export default function Transactions() {
         accountId: 'default',
         encryptedData,
         userId: user.uid,
+        audited: formData.audited,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -147,7 +150,7 @@ export default function Transactions() {
         resourceType: 'expense',
         resourceId: newDoc.id,
         resourceName: formData.description,
-        details: `Created transaction for ${formatCurrency(parseFloat(formData.amount))} in ${formData.category}`
+        details: `Created transaction for ${formatCurrency(parseFloat(formData.amount))} in ${formData.category}${formData.audited ? ' (PRE-AUDITED)' : ''}`
       });
       
       setIsAdding(false);
@@ -175,6 +178,7 @@ export default function Transactions() {
         category: formData.category.toLowerCase().trim(),
         date: new Date(formData.date).toISOString(),
         encryptedData,
+        audited: formData.audited,
         updatedAt: new Date().toISOString()
       });
 
@@ -186,7 +190,7 @@ export default function Transactions() {
         resourceType: 'expense',
         resourceId: editingId,
         resourceName: formData.description,
-        details: `Updated amount to ${formatCurrency(parseFloat(formData.amount))} and category to ${formData.category}`
+        details: `Updated entry. Status: ${formData.audited ? 'AUDITED' : 'PENDING'}. Amount: ${formatCurrency(parseFloat(formData.amount))}`
       });
       
       setEditingId(null);
@@ -214,6 +218,30 @@ export default function Transactions() {
     }
   };
 
+  const handleToggleAudited = async (exp: any) => {
+    if (!user) return;
+    const newStatus = !exp.audited;
+    try {
+      await updateDoc(doc(db, 'users', user.uid, 'expenses', exp.id), {
+        audited: newStatus,
+        updatedAt: new Date().toISOString()
+      });
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'UPDATE',
+        resourceType: 'expense',
+        resourceId: exp.id,
+        resourceName: exp.description,
+        details: `Toggled audit status to ${newStatus ? 'AUDITED' : 'UNAUDITED'}`
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const startEdit = (exp: any) => {
     setEditingId(exp.id);
     setFormData({
@@ -221,7 +249,8 @@ export default function Transactions() {
       amount: exp.amount.toString(),
       category: exp.category,
       description: exp.description,
-      notes: exp.notes || ''
+      notes: exp.notes || '',
+      audited: !!exp.audited
     });
   };
 
@@ -231,7 +260,8 @@ export default function Transactions() {
       amount: '',
       category: '',
       description: '',
-      notes: ''
+      notes: '',
+      audited: false
     });
   };
 
@@ -357,11 +387,23 @@ export default function Transactions() {
                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
                 />
               </div>
-              <div className="flex items-end">
-                <button type="submit" className="w-full btn-primary py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
-                  {editingId ? 'Update Ledger' : 'Commit Entry'}
-                </button>
-              </div>
+                <div className="flex items-center gap-2 pt-6">
+                  <input 
+                    type="checkbox"
+                    id="audited"
+                    checked={formData.audited}
+                    onChange={e => setFormData({...formData, audited: e.target.checked})}
+                    className="w-4 h-4 text-[#86BC24] border-slate-300 rounded focus:ring-[#86BC24]"
+                  />
+                  <label htmlFor="audited" className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">
+                     Audited
+                  </label>
+                </div>
+                <div className="flex items-end">
+                  <button type="submit" className="w-full btn-primary py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
+                    {editingId ? 'Update Ledger' : 'Commit Entry'}
+                  </button>
+                </div>
             </form>
           </motion.div>
         )}
@@ -408,6 +450,7 @@ export default function Transactions() {
                     <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
@@ -434,6 +477,29 @@ export default function Transactions() {
                     <span className="text-sm font-bold text-slate-900">
                       {formatCurrency(exp.amount)}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button 
+                      onClick={() => handleToggleAudited(exp)}
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1 rounded text-[10px] font-bold uppercase transition-all border",
+                        exp.audited 
+                          ? "bg-green-50 text-green-700 border-green-100" 
+                          : "bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-200"
+                      )}
+                    >
+                      {exp.audited ? (
+                        <>
+                          <ShieldCheck size={12} className="text-[#86BC24]" />
+                          Audited
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-3 h-3 rounded-full border border-slate-300" />
+                          Pending
+                        </>
+                      )}
+                    </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

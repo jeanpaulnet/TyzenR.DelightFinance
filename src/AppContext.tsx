@@ -95,43 +95,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Role & Menu Access fetching
     const fetchUserConfig = async () => {
-      const configRef = doc(db, 'users_config', user.uid);
-      const configSnap = await getDoc(configRef);
-      
-      if (configSnap.exists()) {
-        const data = configSnap.data();
-        setUserRole(data.role);
-        setMenuAccess(data.menuAccess);
-      } else {
-        // Check if there was an invitation via email slug
-        const emailSlug = user.email ? user.email.toLowerCase().replace(/[^a-z0-9]/g, '_') : null;
-        let invitedData: any = null;
+      try {
+        const configRef = doc(db, 'users_config', user.uid);
+        const configSnap = await getDoc(configRef);
         
-        if (emailSlug) {
-           const invitedRef = doc(db, 'users_config', emailSlug);
-           const invitedSnap = await getDoc(invitedRef);
-           if (invitedSnap.exists()) {
-              invitedData = invitedSnap.data();
-           }
-        }
+        if (configSnap.exists()) {
+          const data = configSnap.data();
+          setUserRole(data.role);
+          setMenuAccess(data.menuAccess);
+        } else {
+          // Check if there was an invitation via email slug
+          const emailSlug = user.email ? user.email.toLowerCase().replace(/[^a-z0-9]/g, '_') : null;
+          let invitedData: any = null;
+          
+          if (emailSlug) {
+             const invitedRef = doc(db, 'users_config', emailSlug);
+             const invitedSnap = await getDoc(invitedRef);
+             if (invitedSnap.exists()) {
+                invitedData = invitedSnap.data();
+             }
+          }
 
-        // Initial setup
-        const isBootstrapAdmin = user.email === 'jeanpaulva@gmail.com';
-        const initialRole = isBootstrapAdmin ? 'Admin' : (invitedData?.role || 'User');
-        const initialMenu = isBootstrapAdmin ? ADMIN_MENU_ACCESS : (invitedData?.menuAccess || DEFAULT_MENU_ACCESS);
-        const initialName = invitedData?.name || user.displayName || 'Delight User';
-        
-        await setDoc(configRef, {
-          email: user.email,
-          name: initialName,
-          role: initialRole,
-          menuAccess: initialMenu,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-        
-        setUserRole(initialRole as any);
-        setMenuAccess(initialMenu);
+          // Initial setup
+          const isBootstrapAdmin = user.email === 'jeanpaulva@gmail.com';
+          const initialRole = isBootstrapAdmin ? 'Admin' : (invitedData?.role || 'User');
+          const initialMenu = isBootstrapAdmin ? ADMIN_MENU_ACCESS : (invitedData?.menuAccess || DEFAULT_MENU_ACCESS);
+          const initialName = invitedData?.name || user.displayName || 'Delight User';
+          
+          await setDoc(configRef, {
+            email: user.email,
+            name: initialName,
+            role: initialRole,
+            menuAccess: initialMenu,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          
+          setUserRole(initialRole as any);
+          setMenuAccess(initialMenu);
+        }
+      } catch (error) {
+        console.error("Error initializing user config:", error);
+        // Fallback to defaults to prevent hanging the app
+        setUserRole('User');
+        setMenuAccess(DEFAULT_MENU_ACCESS);
       }
     };
     fetchUserConfig();

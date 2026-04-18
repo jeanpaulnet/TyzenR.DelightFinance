@@ -1,6 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+let aiInstance: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not defined in the environment.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+};
 
 export interface FinancialData {
   expenses: any[];
@@ -19,28 +30,35 @@ export interface FinancialData {
 export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: string) => {
   const model = "gemini-3-flash-preview";
   
+  // Simplify expenses to avoid context window bloat and potential stringify issues
+  const simplifiedExpenses = data.expenses.slice(0, 40).map(e => ({
+    date: e.date?.split('T')[0],
+    amount: e.amount,
+    category: e.category,
+    description: e.description?.slice(0, 50)
+  }));
+
   const systemInstruction = `
-    You are Delight, an expert financial advisor and health analyzer.
-    Analyzed Data:
-    - Expenses: ${JSON.stringify(data.expenses.slice(0, 50))} (sample)
-    - Total Spent: $${data.summary.totalSpent}
-    - Total Budget: $${data.summary.totalBudget}
-    - Variance: ${data.summary.totalSpent > data.summary.totalBudget ? 'OVER BUDGET' : 'UNDER BUDGET'}
-    - Investments: ${JSON.stringify(data.investments)}
+    You are Delight, a professional financial intelligence engine.
     
-    Goal:
-    Provide sharp, data-grounded insights.
-    Identify risks (e.g., high spending vs income, poor asset allocation).
-    Suggest improvements.
+    Current Financial State:
+    - Recent Transactions: ${JSON.stringify(simplifiedExpenses)}
+    - Total Spent: $${data.summary.totalSpent.toFixed(2)}
+    - Budget Ceiling: $${data.summary.totalBudget.toFixed(2)}
+    - Net Variance: $${data.summary.surplus.toFixed(2)} (${data.summary.totalSpent > data.summary.totalBudget ? 'OVER BUDGET' : 'UNDER BUDGET'})
+    - Investment Portfolio Value: $${data.summary.investmentValue.toFixed(2)}
     
-    Source Traceability:
-    Always cite specific categories or accounts when making claims.
-    Format your response in Markdown. Use bold for key numbers.
+    Guidelines:
+    1. Be precise. Use Bold for all currency values.
+    2. Cite specific categories (e.g., "Your Spending in **Housing**...")
+    3. Identify exactly 3 actionable risks or opportunities.
+    4. Format using clean Markdown with distinct sections.
   `;
 
-  const prompt = userQuery || "Provide a general analysis of my financial health based on the provided data.";
+  const prompt = userQuery || "Analyze my current financial health and identify the top 3 risks.";
 
   try {
+    const ai = getAI();
     const response = await ai.models.generateContent({
       model,
       contents: prompt,
@@ -51,10 +69,10 @@ export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: st
     });
 
     const correlationId = `TRC-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
-    const dataHash = `DTA-${data.expenses.length}e-${data.budgets.length}b`; // Simple hash for reproducibility check
+    const dataHash = `DTA-${data.expenses.length}e-${data.budgets.length}b`;
 
     return {
-      text: response.text,
+      text: response.text || "No analysis could be generated.",
       metadata: {
         correlationId,
         dataSnapshot: dataHash,
@@ -64,7 +82,15 @@ export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: st
     };
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
-    return "I'm sorry, I couldn't perform the analysis right now. Please try again later.";
+    return {
+      text: "I'm sorry, I encountered a technical issue while analyzing your data. This may be due to a connection timeout or temporary API unavailability. Please try again or rephrase your request.",
+      metadata: {
+        correlationId: "ERROR-" + Date.now(),
+        dataSnapshot: "NA",
+        timestamp: new Date().toISOString(),
+        modelUsed: model
+      }
+    };
   }
 };
 

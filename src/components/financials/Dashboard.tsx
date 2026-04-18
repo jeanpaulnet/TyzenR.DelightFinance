@@ -93,7 +93,9 @@ export default function Dashboard() {
     // Time-series data
     const sortedExpenses = [...filteredExpenses].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const timeSeries = sortedExpenses.reduce((acc: any, exp) => {
-      const month = new Date(exp.date).toLocaleDateString('en-US', { month: 'short' });
+      const dateObj = new Date(exp.date);
+      if (isNaN(dateObj.getTime())) return acc;
+      const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
       acc[month] = (acc[month] || 0) + exp.amount;
       return acc;
     }, {});

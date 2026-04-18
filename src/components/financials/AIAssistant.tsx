@@ -85,9 +85,9 @@ export default function AIAssistant() {
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: typeof aiResults === 'string' ? aiResults : aiResults.text || "I encountered an error analyzing your data.",
+        content: aiResults.text,
         timestamp: new Date(),
-        metadata: typeof aiResults === 'object' ? aiResults.metadata : undefined
+        metadata: aiResults.metadata
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -122,9 +122,9 @@ export default function AIAssistant() {
       const assistantMsg: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: typeof aiResults === 'string' ? aiResults : aiResults.text || "I couldn't generate a summary report at this time.",
+        content: aiResults.text,
         timestamp: new Date(),
-        metadata: typeof aiResults === 'object' ? aiResults.metadata : undefined
+        metadata: aiResults.metadata
       };
 
       setMessages(prev => [...prev, assistantMsg]);
