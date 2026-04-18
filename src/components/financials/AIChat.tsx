@@ -217,13 +217,6 @@ export default function AIChat() {
               >
                 What is the trend for April?
               </button>
-              <button 
-                onClick={() => handleSend(undefined, "What is the trends for april?")}
-                disabled={isTyping}
-                className="px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-[11px] font-medium hover:bg-white hover:border-[#86BC24] hover:text-[#86BC24] transition-all"
-              >
-                What is the trends for april?
-              </button>
             </div>
           </div>
         )}

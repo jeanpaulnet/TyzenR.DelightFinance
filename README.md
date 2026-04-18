@@ -1,20 +1,76 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Delight Finance - Technical Architecture
 
-# Run and deploy your AI Studio app
+Delight Finance is a high-fidelity, secure financial intelligence dashboard built with a zero-knowledge encryption architecture and integrated AI analysis.
 
-This contains everything you need to run your app locally.
+## Architecture Overview
 
-View your app in AI Studio: https://ai.studio/apps/a4ec1152-8fdd-4ac9-af37-075fd2b1d84b
+```mermaid
+graph TD
+    subgraph Client_Side [User Browser - React SPA]
+        UI[UI Components / Framer Motion]
+        Store[App Context / Global State]
+        Crypto[Web Crypto API - AES-256 Encryption]
+        Auth_SDK[Firebase Auth SDK]
+        FS_SDK[Firestore SDK]
+    end
 
-## Run Locally
+    subgraph Backend [Express Server - Node.js]
+        Proxy[API Proxy / CORS Middleware]
+        Static[Static File Server - Vite Dist]
+    end
 
-**Prerequisites:**  Node.js
+    subgraph External_Services [Google Cloud Platform]
+        Firebase_Auth((Firebase Authentication))
+        Firestore[(Cloud Firestore - Encrypted Data)]
+        Gemini[Google Gemini API - AI Engine]
+    end
 
+    %% Flow: User Interaction
+    UI --> Store
+    Store --> Crypto
+    
+    %% Flow: Authentication
+    Auth_SDK <--> Firebase_Auth
+    
+    %% Flow: Data Storage
+    Crypto -- "Encrypted Data" --> FS_SDK
+    FS_SDK <--> Firestore
+    
+    %% Flow: AI Intelligence
+    UI -- "Analysis Request" --> Proxy
+    Proxy -- "Secure RPC" --> Gemini
+    Gemini -- "Insights" --> Proxy
+    Proxy -- "Markdown Response" --> UI
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+    %% External Access
+    OtherApps[External Applications] -- "REST /api/chat" --> Proxy
+```
+
+## Core Components
+
+### 1. Frontend (React 19 + TypeScript)
+- **Vite & Tailwind CSS**: Modern build toolchain and utility-first styling.
+- **Framer Motion**: Powering fluid UI transitions and the confirmation modal system.
+- **Zero-Knowledge Encryption**: Financial data is encrypted on the client using `AES-256` before persistence. The server never sees raw financial values.
+
+### 2. Backend (Express.js)
+- **Unified Proxy**: Migrated Gemini calls from client to server to protect API keys and centralize analytical logic.
+- **Externalized API**: Exposes `/api/chat` and `/api/health` with CORS headers, allowing external integration.
+- **Vite Integration**: Operates as a development middleware in dev mode and a static file server in production.
+
+### 3. Database & Auth (Firebase)
+- **Firestore**: Real-time NoSQL storage for accounts, budgets, and audit logs.
+- **Security Rules**: Robust server-side rules enforcing identity-based access and immutable audit trails.
+- **Google OAuth**: Fast, secure authentication via Firebase Auth.
+
+### 4. AI Engine (Gemini 3 Flash)
+- **Financial Intelligence**: Context-aware analysis of spending trends and budget variances.
+- **Audit Grounding**: Capable of querying historical audit logs to provide transparency on transaction modifications.
+
+## Security & Compliance
+- **AES-256 Encryption**: Every financial document is encrypted with a user-provided passphrase.
+- **Immutable Audit History**: All "Create", "Update", and "Delete" actions are recorded in an audit trail that cannot be modified by users.
+- **CORS Restricted**: API externalization is governed by secure middleware to prevent unauthorized cross-origin requests.
+
+---
+*Version: 2.0.0 | Release: Technical Architecture Finalization*

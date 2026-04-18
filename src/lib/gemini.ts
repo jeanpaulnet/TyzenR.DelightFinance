@@ -1,18 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
-
-let aiInstance: GoogleGenAI | null = null;
-
-const getAI = () => {
-  if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is not defined in the environment.");
-    }
-    aiInstance = new GoogleGenAI({ apiKey });
-  }
-  return aiInstance;
-};
-
 export interface FinancialData {
   expenses: any[];
   budgets: any[];
@@ -28,9 +13,6 @@ export interface FinancialData {
 }
 
 export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: string) => {
-  const model = "gemini-3-flash-preview";
-  
-  // Simplify expenses to avoid context window bloat and potential stringify issues
   const simplifiedExpenses = data.expenses.slice(0, 40).map(e => ({
     date: e.date?.split('T')[0],
     amount: e.amount,
@@ -58,37 +40,33 @@ export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: st
   const prompt = userQuery || "Analyze my current financial health and identify the top 3 risks.";
 
   try {
-    const ai = getAI();
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-      },
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        prompt: `${systemInstruction}\n\nUser Question: ${prompt}` 
+      })
     });
 
-    const correlationId = `TRC-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
-    const dataHash = `DTA-${data.expenses.length}e-${data.budgets.length}b`;
+    if (!response.ok) throw new Error('Failed to fetch from externalized AI API');
+    
+    const result = await response.json();
 
     return {
-      text: response.text || "No analysis could be generated.",
+      text: result.text,
       metadata: {
-        correlationId,
-        dataSnapshot: dataHash,
-        timestamp: new Date().toISOString(),
-        modelUsed: model
+        ...result.metadata,
+        correlationId: `EXT-${Date.now()}`,
+        dataSnapshot: `DTA-${data.expenses.length}e`
       }
     };
   } catch (error) {
-    console.error("Gemini Analysis Error:", error);
+    console.error("Externalized Gemini Analysis Error:", error);
     return {
-      text: "I'm sorry, I encountered a technical issue while analyzing your data. This may be due to a connection timeout or temporary API unavailability. Please try again or rephrase your request.",
+      text: "I'm sorry, I encountered a technical issue while analyzing your data via the external API.",
       metadata: {
         correlationId: "ERROR-" + Date.now(),
-        dataSnapshot: "NA",
-        timestamp: new Date().toISOString(),
-        modelUsed: model
+        timestamp: new Date().toISOString()
       }
     };
   }
