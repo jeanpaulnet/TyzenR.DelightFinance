@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../AppContext';
-import { decryptPayload } from '../../lib/encryption';
 import { formatCurrency, cn } from '../../lib/utils';
 import { logEvent } from '../../lib/audit';
 import { 
@@ -13,20 +12,15 @@ import {
   Pie, 
   Cell 
 } from 'recharts';
-import { ExpenseLineChart, PortfolioPieChart, VarianceTrendChart, ComputeChart } from '../ui/FinancialCharts';
-
-const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
+import { VarianceTrendChart, PortfolioPieChart } from '../ui/FinancialCharts';
 
 export default function Dashboard() {
-  const { finData, encryptionKey, user } = useApp();
-  
-  // Date range state - default to YTD (start of year to end of current month)
-  const now = new Date();
-  const firstDay = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-  
-  const [startDate, setStartDate] = useState(firstDay);
-  const [endDate, setEndDate] = useState(lastDay);
+  const { finData, user, dateFilter, activeBusinessId, businesses } = useApp();
+  const [chartType, setChartType] = useState<'bars' | 'lines'>('bars');
+
+  const activeBusiness = useMemo(() => 
+    businesses.find(b => b.id === activeBusinessId), 
+  [businesses, activeBusinessId]);
 
   useEffect(() => {
     if (user) {
@@ -40,22 +34,15 @@ export default function Dashboard() {
     }
   }, [user]);
 
-  const decryptedExpenses = useMemo(() => {
-    if (!encryptionKey) return [];
-    return finData.expenses.map(e => ({
-      ...e,
-      ...decryptPayload(e.encryptedData, encryptionKey)
-    }));
-  }, [finData.expenses, encryptionKey]);
-
   const filteredExpenses = useMemo(() => {
-    return decryptedExpenses.filter(e => {
+    return finData.expenses.filter(e => {
       const expDate = e.date.split('T')[0];
-      return expDate >= startDate && expDate <= endDate;
+      return expDate >= dateFilter.startDate && expDate <= dateFilter.endDate;
     });
-  }, [decryptedExpenses, startDate, endDate]);
+  }, [finData.expenses, dateFilter]);
 
   const summary = useMemo(() => {
+    const currency = activeBusiness?.currency || 'USD';
     const totalSpent = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
     const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
     const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
@@ -116,113 +103,67 @@ export default function Dashboard() {
       };
     });
 
-    return { totalSpent, totalBudget, investmentValue, chartData, varianceData, lineChartData, periodData };
-  }, [filteredExpenses, finData.budgets, finData.investments]);
+    return { totalSpent, totalBudget, investmentValue, chartData, varianceData, lineChartData, periodData, currency };
+  }, [filteredExpenses, finData.budgets, finData.investments, activeBusiness]);
 
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Financial Overview</h1>
-          <p className="text-slate-500 text-sm italic">Real-time health pulse and variance analysis.</p>
-        </div>
-        <div className="flex flex-col md:flex-row items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">From</label>
-              <input 
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24] transition-colors"
-              />
-            </div>
-            <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">To</label>
-              <input 
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24] transition-colors"
-              />
-            </div>
-          </div>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{activeBusiness?.name || 'Overview'}</h1>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="dashboard-card">
-          <p className="stat-label">Actual Spending</p>
-          <p className="stat-value">{formatCurrency(summary.totalSpent)}</p>
-          <div className={cn("variance mt-1 flex items-center gap-1", summary.totalSpent > summary.totalBudget ? "variance-down" : "variance-up")}>
-             {summary.totalSpent > summary.totalBudget ? <ArrowUpRight size={14}/> : <ArrowDownRight size={14}/>}
-             {summary.totalBudget > 0 ? (summary.totalSpent / summary.totalBudget * 100).toFixed(1) + '%' : '0%'} of month budget
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="dashboard-card shadow-sm h-full flex flex-col">
+          <div className="mb-6 shrink-0">
+            <p className="stat-label m-0 text-slate-900">Spending By Category</p>
+            <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Expense distribution across categories</p>
+          </div>
+          <div className="flex-1 min-h-[350px]">
+            <PortfolioPieChart 
+              data={summary.chartData} 
+              height="100%" 
+              currencyCode={summary.currency}
+            />
           </div>
         </div>
 
-        <div className="dashboard-card">
-          <p className="stat-label">Budget Variance</p>
-          <p className="stat-value">{formatCurrency(summary.totalBudget - summary.totalSpent)}</p>
-          <div className={cn("variance mt-1", summary.totalBudget - summary.totalSpent < 0 ? "variance-down" : "variance-up")}>
-            {summary.totalBudget - summary.totalSpent < 0 ? 'Over budget' : 'Under budget'}
-          </div>
-        </div>
-
-        <div className="dashboard-card">
-          <p className="stat-label">Forecasted Spending</p>
-          <p className="stat-value">{formatCurrency(summary.totalBudget)}</p>
-          <div className="text-[0.8rem] mt-1 text-slate-400 font-medium whitespace-nowrap">Total defined categories</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Spending Chart */}
-        <div className="dashboard-card lg:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <span className="stat-label">Spending Distribution</span>
-            <div className="text-[0.75rem] text-slate-400">By Category</div>
-          </div>
-          <div className="h-[280px]">
-             <PortfolioPieChart key={`pie-${summary.chartData.length}`} data={summary.chartData} height={280} />
-          </div>
-        </div>
-
-        {/* Expenses Over Time */}
-        <div className="dashboard-card lg:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <span className="stat-label">Expense Trends</span>
-            <div className="text-[0.75rem] text-slate-400">Monthly Flow</div>
-          </div>
-          <div className="h-[280px]">
-            <ExpenseLineChart key={`line-${summary.lineChartData.length}`} data={summary.lineChartData} height={280} />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 text-indigo-900">
-        <div className="dashboard-card shadow-sm">
-          <div className="flex items-center justify-between mb-6">
+        <div className="dashboard-card shadow-sm h-full flex flex-col">
+          <div className="flex items-center justify-between mb-6 shrink-0">
             <div>
-               <p className="stat-label m-0 text-indigo-600">INSIGHTS</p>
+               <p className="stat-label m-0 text-slate-900">Financial Performance</p>
+               <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Budget vs Actuals vs Forecast</p>
             </div>
-            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest px-4 py-2 bg-slate-50/80 rounded-full border border-slate-100">
-               <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-1 bg-indigo-500/20 border-t-2 border-indigo-500" />
-                  <span className="text-indigo-600">Trends</span>
-               </div>
-               <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-[#F43F5E]" />
-                  <span className="text-[#F43F5E]">Overruns</span>
-               </div>
-               <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-[#F59E0B]" />
-                  <span className="text-[#F59E0B]">Variance</span>
-               </div>
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+              <button 
+                onClick={() => setChartType('bars')}
+                className={cn(
+                  "px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all",
+                  chartType === 'bars' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                Bars
+              </button>
+              <button 
+                onClick={() => setChartType('lines')}
+                className={cn(
+                  "px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all",
+                  chartType === 'lines' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                Lines
+              </button>
             </div>
           </div>
-          <div className="h-[320px]">
-             <ComputeChart key={`compute-${summary.periodData.length}-${startDate}-${endDate}`} data={summary.periodData} height={320} />
+          <div className="flex-1 min-h-[350px]">
+             <VarianceTrendChart 
+               key={`variance-${summary.periodData.length}-${dateFilter.startDate}-${dateFilter.endDate}-${chartType}`} 
+               data={summary.periodData} 
+               height="100%" 
+               type={chartType} 
+               currencyCode={summary.currency}
+             />
           </div>
         </div>
       </div>

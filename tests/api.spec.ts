@@ -22,4 +22,22 @@ test.describe('Externalized API', () => {
     const body = await response.json();
     expect(body.error).toBe("Missing 'prompt' in request body.");
   });
+
+  test('chat endpoint should return a response for a valid prompt', async ({ request }) => {
+    test.setTimeout(30000); // AI calls can be slow
+    const response = await request.post('/api/chat', {
+      data: {
+        prompt: "Say 'Hello, I am working!'"
+      }
+    });
+    
+    const body = await response.json();
+    if (response.status() !== 200) {
+      console.error('Error Body:', body);
+    }
+    expect(response.status()).toBe(200);
+    expect(body.text).toBeDefined();
+    expect(typeof body.text).toBe('string');
+    console.log('Gemini Response:', body.text);
+  });
 });

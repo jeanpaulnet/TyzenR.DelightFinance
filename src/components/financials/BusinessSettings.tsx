@@ -1,0 +1,265 @@
+import React, { useState, useEffect } from 'react';
+import { useApp } from '../../AppContext';
+import { motion, AnimatePresence } from 'motion/react';
+import { Building2, Coins, Clock, Trash2, Save, AlertTriangle, Loader2 } from 'lucide-react';
+import { cn } from '../../lib/utils';
+
+const CURRENCIES = [
+  { code: 'USD', name: 'US Dollar' },
+  { code: 'EUR', name: 'Euro' },
+  { code: 'GBP', name: 'British Pound' },
+  { code: 'INR', name: 'Indian Rupee' },
+  { code: 'JPY', name: 'Japanese Yen' },
+];
+
+const TIMEZONES = [
+  'UTC',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Asia/Tokyo',
+];
+
+export default function BusinessSettings() {
+  const { businesses, activeBusinessId, updateBusiness, deleteBusiness, setActiveTab } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [formData, setFormData] = useState<{
+    name: string;
+    type: 'personal' | 'business';
+    currency: string;
+    timezone: string;
+  } | null>(null);
+
+  const activeBiz = businesses.find(b => b.id === activeBusinessId);
+
+  useEffect(() => {
+    if (activeBiz) {
+      setFormData({
+        name: activeBiz.name,
+        type: activeBiz.type,
+        currency: activeBiz.currency,
+        timezone: activeBiz.timezone,
+      });
+    }
+  }, [activeBiz]);
+
+  if (!activeBiz || !formData) return null;
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    try {
+      await updateBusiness(activeBiz.id, formData);
+      setActiveTab('dashboard'); // Switch to dashboard tab after save
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await deleteBusiness(activeBiz.id);
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#86BC24]/10 flex items-center justify-center text-[#86BC24]">
+            <Building2 size={24} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Business Settings</h2>
+            <p className="text-sm text-slate-500 mt-1">Manage core configuration for {activeBiz.name}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <form onSubmit={handleUpdate} className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Business Name</label>
+                <input 
+                  required
+                  value={formData.name}
+                  onChange={e => setFormData({...formData, name: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Profile Type</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className={cn(
+                    "flex items-center gap-3 p-4 border rounded-2xl cursor-pointer transition-all",
+                    formData.type === 'personal' ? "border-[#86BC24] bg-[#86BC24]/5" : "border-slate-100 hover:border-slate-200"
+                  )}>
+                    <input 
+                      type="radio" 
+                      className="sr-only"
+                      checked={formData.type === 'personal'}
+                      onChange={() => setFormData({...formData, type: 'personal'})}
+                    />
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                      formData.type === 'personal' ? "border-[#86BC24]" : "border-slate-300"
+                    )}>
+                      {formData.type === 'personal' && <div className="w-2 h-2 rounded-full bg-[#86BC24]" />}
+                    </div>
+                    <span className="text-sm font-bold text-slate-900">Personal Finance</span>
+                  </label>
+
+                  <label className={cn(
+                    "flex items-center gap-3 p-4 border rounded-2xl cursor-pointer transition-all",
+                    formData.type === 'business' ? "border-[#86BC24] bg-[#86BC24]/5" : "border-slate-100 hover:border-slate-200"
+                  )}>
+                    <input 
+                      type="radio" 
+                      className="sr-only"
+                      checked={formData.type === 'business'}
+                      onChange={() => setFormData({...formData, type: 'business'})}
+                    />
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                      formData.type === 'business' ? "border-[#86BC24]" : "border-slate-300"
+                    )}>
+                      {formData.type === 'business' && <div className="w-2 h-2 rounded-full bg-[#86BC24]" />}
+                    </div>
+                    <span className="text-sm font-bold text-slate-900">Business Finance</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Coins size={12} /> Reporting Currency
+                  </label>
+                  <select 
+                    value={formData.currency}
+                    onChange={e => setFormData({...formData, currency: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                  >
+                    {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Clock size={12} /> Reporting Timezone
+                  </label>
+                  <select 
+                    value={formData.timezone}
+                    onChange={e => setFormData({...formData, timezone: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                  >
+                    {TIMEZONES.map(t => <option key={t} value={t}>{t}</option>)}
+                    {!TIMEZONES.includes(formData.timezone) && <option value={formData.timezone}>{formData.timezone}</option>}
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-end">
+                <button 
+                  disabled={loading}
+                  className="bg-[#86BC24] text-white px-8 py-3 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-[#86BC24]/20 hover:bg-[#75A51F] transition-all flex items-center gap-2"
+                >
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+
+        <div className="space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-red-50 border border-red-100 rounded-3xl p-8"
+          >
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-red-600/10 flex items-center justify-center">
+                <Trash2 size={20} />
+              </div>
+              <h3 className="text-sm font-bold uppercase tracking-wider">Danger Zone</h3>
+            </div>
+            
+            <p className="text-xs text-red-600/70 leading-relaxed mb-6">
+              Deleting this business will remove all associated transactions, budgets, and reporting data. This action is irreversible.
+            </p>
+
+            <button 
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full py-3 bg-white border border-red-200 text-red-600 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm"
+            >
+              Delete Business
+            </button>
+          </motion.div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              onClick={() => setShowDeleteConfirm(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl overflow-hidden"
+            >
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-600 mx-auto mb-6">
+                <AlertTriangle size={32} />
+              </div>
+              
+              <h3 className="text-xl font-bold text-center text-slate-900 mb-2">Delete Business?</h3>
+              <p className="text-sm text-slate-500 text-center mb-8 px-4">
+                Are you sure you want to delete <span className="font-bold text-slate-900">{activeBiz.name}</span>? This will permanently erase all data linked to this entity.
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="w-full py-4 bg-red-600 text-white rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-red-500/20 hover:bg-red-700 transition-all flex items-center justify-center gap-2"
+                >
+                  {loading && <Loader2 size={18} className="animate-spin" />}
+                  Confirm Permanent Deletion
+                </button>
+                <button 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-full py-4 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm uppercase tracking-widest hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

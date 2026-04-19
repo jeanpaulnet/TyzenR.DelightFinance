@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../AppContext';
-import { formatCurrency, cn } from '../../lib/utils';
+import { formatCurrency, getCurrencySymbol, cn } from '../../lib/utils';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { 
@@ -18,7 +18,10 @@ import { motion } from 'motion/react';
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
 
 export default function InvestmentTracker() {
-  const { finData, user } = useApp();
+  const { finData, user, activeBusinessId, businesses } = useApp();
+  const activeBusiness = useMemo(() => businesses.find(b => b.id === activeBusinessId), [businesses, activeBusinessId]);
+  const currencyCode = activeBusiness?.currency || 'USD';
+
   const [newInv, setNewInv] = useState({ symbol: '', quantity: 0, purchasePrice: 0, assetClass: 'Stock' });
   const [showAdd, setShowAdd] = useState(false);
 
@@ -37,10 +40,11 @@ export default function InvestmentTracker() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !activeBusinessId) return;
     try {
       await addDoc(collection(db, 'users', user.uid, 'investments'), {
         ...newInv,
+        businessId: activeBusinessId,
         userId: user.uid,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -97,10 +101,15 @@ export default function InvestmentTracker() {
           </div>
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Avg. Cost</label>
-            <input 
-              type="number" step="any" value={newInv.purchasePrice} onChange={e => setNewInv({...newInv, purchasePrice: parseFloat(e.target.value)})}
-              required className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none"
-            />
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
+                {getCurrencySymbol(currencyCode)}
+              </span>
+              <input 
+                type="number" step="any" value={newInv.purchasePrice} onChange={e => setNewInv({...newInv, purchasePrice: parseFloat(e.target.value)})}
+                required className="w-full pl-12 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm"
+              />
+            </div>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Class</label>
@@ -144,12 +153,12 @@ export default function InvestmentTracker() {
                       <p className="text-xs text-slate-400">{inv.assetClass}</p>
                     </td>
                     <td className="py-4 font-mono">{inv.quantity}</td>
-                    <td className="py-4 font-mono">{formatCurrency(inv.purchasePrice)}</td>
-                    <td className="py-4 font-mono font-bold">{formatCurrency(inv.quantity * inv.purchasePrice)}</td>
+                    <td className="py-4 font-mono">{formatCurrency(inv.purchasePrice, currencyCode)}</td>
+                    <td className="py-4 font-mono font-bold">{formatCurrency(inv.quantity * inv.purchasePrice, currencyCode)}</td>
                     <td className="py-4 text-right">
                       <button 
                         onClick={() => handleDelete(inv.id)}
-                        className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                        className="p-2 text-slate-400 hover:text-red-500 transition-colors"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -170,11 +179,11 @@ export default function InvestmentTracker() {
             Asset Allocation
           </h3>
           <div className="flex-1 min-h-[300px]">
-            <PortfolioPieChart data={stats.chartData} height={300} />
+            <PortfolioPieChart data={stats.chartData} height={300} currencyCode={currencyCode} />
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100">
             <p className="text-sm text-slate-500">Total Portfolio Value (Basis)</p>
-            <p className="text-2xl font-bold text-indigo-600">{formatCurrency(stats.totalBasis)}</p>
+            <p className="text-2xl font-bold text-indigo-600">{formatCurrency(stats.totalBasis, currencyCode)}</p>
           </div>
         </div>
       </div>

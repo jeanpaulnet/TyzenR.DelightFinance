@@ -19,21 +19,62 @@ import {
 } from 'recharts';
 import { formatCurrency } from '../../lib/utils';
 
-const COLORS = ['#86BC24', '#75A51F', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
+const COLORS = ['#002776', '#00a1de', '#86BC24', '#75A51F', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
+const CATEGORY_COLORS = ['#EC4899', '#84CC16', '#06B6D4', '#22C55E', '#1D4ED8', '#F97316', '#8B5CF6', '#EAB308'];
 
 interface ChartProps {
   data: any[];
-  height?: number;
+  height?: number | string;
+  colors?: string[];
+  currencySymbol?: string;
+  currencyCode?: string;
+}
+
+interface VarianceChartProps extends ChartProps {
+  type?: 'bars' | 'lines';
 }
 
 /**
- * Composed chart for showing budget vs actual trends over time
+ * Chart for showing budget vs actual trends over time (Bars or Lines)
  */
-export const VarianceTrendChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
+export const VarianceTrendChart: React.FC<VarianceChartProps> = ({ data, height = 300, type = 'bars', currencyCode = 'USD' }) => {
+  if (type === 'lines') {
+    return (
+      <div style={{ width: '100%', height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+            <XAxis 
+              dataKey="date" 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fill: '#64748B', fontSize: 10 }}
+              dy={10}
+            />
+            <YAxis 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fill: '#64748B', fontSize: 10 }}
+              tickFormatter={(value) => formatCurrency(value, currencyCode)}
+            />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
+              formatter={(value: number) => formatCurrency(value, currencyCode)}
+            />
+            <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
+            <Line type="monotone" dataKey="budget" stroke="#002776" name="Budget" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="actual" stroke="#86BC24" name="Actual" strokeWidth={3} dot={{ fill: '#86BC24', r: 4 }} activeDot={{ r: 6 }} />
+            <Line type="monotone" dataKey="forecast" stroke="#00a1de" name="Forecast" strokeWidth={2} dot={false} strokeDasharray="3 3" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+        <BarChart data={data} margin={{ top: 20, right: 20, bottom: 20, left: 20 }} barGap={2}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
           <XAxis 
             dataKey="date" 
@@ -46,18 +87,17 @@ export const VarianceTrendChart: React.FC<ChartProps> = ({ data, height = 300 })
             axisLine={false} 
             tickLine={false} 
             tick={{ fill: '#64748B', fontSize: 10 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => formatCurrency(value, currencyCode)}
           />
           <Tooltip 
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-            formatter={(value: number) => formatCurrency(value)}
+            formatter={(value: number) => formatCurrency(value, currencyCode)}
           />
           <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
-          <Bar dataKey="budget" fill="aliceblue" name="Monthly Budget" radius={[4, 4, 0, 0]} barSize={40} />
-          <Line type="monotone" dataKey="actual" stroke="#86BC24" name="Actual Spending" strokeWidth={3} dot={{ fill: '#86BC24', r: 4 }} activeDot={{ r: 6 }} />
-          <Line type="monotone" dataKey="variance" stroke="#F43F5E" name="Variance" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-          <Line type="monotone" dataKey="forecast" stroke="#6366F1" name="Forecast" strokeWidth={2} strokeDasharray="3 3" dot={false} />
-        </ComposedChart>
+          <Bar dataKey="budget" fill="#002776" name="Budget" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="actual" fill="#86BC24" name="Actual" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="forecast" fill="#00a1de" name="Forecast" radius={[4, 4, 0, 0]} />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
@@ -66,7 +106,7 @@ export const VarianceTrendChart: React.FC<ChartProps> = ({ data, height = 300 })
 /**
  * Composed chart for COMPUTE analysis: Variances, Trends, and Overruns
  */
-export const ComputeChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
+export const ComputeChart: React.FC<ChartProps> = ({ data, height = 300, currencyCode = 'USD' }) => {
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -89,11 +129,11 @@ export const ComputeChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
             axisLine={false} 
             tickLine={false} 
             tick={{ fill: '#64748B', fontSize: 10 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => formatCurrency(value, currencyCode)}
           />
           <Tooltip 
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-            formatter={(value: number) => formatCurrency(value)}
+            formatter={(value: number) => formatCurrency(value, currencyCode)}
           />
           <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
           
@@ -109,7 +149,7 @@ export const ComputeChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
 /**
  * Line chart for displaying expenses or values over time
  */
-export const ExpenseLineChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
+export const ExpenseLineChart: React.FC<ChartProps> = ({ data, height = 300, currencyCode = 'USD' }) => {
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -132,11 +172,11 @@ export const ExpenseLineChart: React.FC<ChartProps> = ({ data, height = 300 }) =
             axisLine={false} 
             tickLine={false} 
             tick={{ fill: '#64748B', fontSize: 10 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => formatCurrency(value, currencyCode)}
           />
           <Tooltip 
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-            formatter={(value: number) => [formatCurrency(value), 'Amount']}
+            formatter={(value: number) => [formatCurrency(value, currencyCode), 'Amount']}
           />
           <Area 
             type="monotone" 
@@ -155,7 +195,7 @@ export const ExpenseLineChart: React.FC<ChartProps> = ({ data, height = 300 }) =
 /**
  * Bar chart for Budget vs Actual comparisons
  */
-export const BudgetBarChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
+export const BudgetBarChart: React.FC<ChartProps> = ({ data, height = 300, currencyCode = 'USD' }) => {
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -172,15 +212,22 @@ export const BudgetBarChart: React.FC<ChartProps> = ({ data, height = 300 }) => 
             axisLine={false} 
             tickLine={false} 
             tick={{ fill: '#64748B', fontSize: 11 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => formatCurrency(value, currencyCode)}
           />
           <Tooltip 
              contentStyle={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-             formatter={(value: number) => formatCurrency(value)}
+             formatter={(value: number) => formatCurrency(value, currencyCode)}
           />
           <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
-          <Bar dataKey="budget" fill="aliceblue" radius={[4, 4, 0, 0]} name="Budget" barSize={32} />
-          <Bar dataKey="actual" fill="#86BC24" radius={[4, 4, 0, 0]} name="Actual" barSize={32} />
+          <Bar dataKey="budget" fill="#002776" radius={[4, 4, 0, 0]} name="Budget" barSize={32} />
+          <Bar dataKey="actual" radius={[4, 4, 0, 0]} name="Actual" barSize={32}>
+            {data.map((entry, index) => (
+              <Cell 
+                key={`cell-${index}`} 
+                fill={entry.actual > entry.budget ? '#EF4444' : '#10B981'} 
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -190,7 +237,7 @@ export const BudgetBarChart: React.FC<ChartProps> = ({ data, height = 300 }) => 
 /**
  * Pie chart for Portfolio Allocation
  */
-export const PortfolioPieChart: React.FC<ChartProps> = ({ data, height = 300 }) => {
+export const PortfolioPieChart: React.FC<ChartProps> = ({ data, height = 300, colors = CATEGORY_COLORS, currencyCode = 'USD' }) => {
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -207,12 +254,12 @@ export const PortfolioPieChart: React.FC<ChartProps> = ({ data, height = 300 }) 
             animationDuration={1500}
           >
             {data.map((_, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
             ))}
           </Pie>
           <Tooltip 
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}
-            formatter={(value: number) => formatCurrency(value)}
+            formatter={(value: number) => formatCurrency(value, currencyCode)}
           />
           <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
         </PieChart>

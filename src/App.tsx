@@ -24,15 +24,15 @@ import Dashboard from './components/financials/Dashboard';
 import BudgetManager from './components/financials/BudgetManager';
 import AIChat from './components/financials/AIChat';
 import Transactions from './components/financials/Transactions';
-import Users from './components/financials/Users';
-import { Users as UsersIcon } from 'lucide-react';
+import BusinessSetup from './components/financials/BusinessSetup';
+import BusinessSettings from './components/financials/BusinessSettings';
+import Header from './components/financials/Header';
 
 function MainApp() {
-  const { user, loading: authLoading, encryptionKey, setEncryptionKey, userRole, menuAccess } = useApp();
-  const [activeTab, setActiveTab] = useState<string>('');
+  const { user, loading: authLoading, userRole, menuAccess, businesses, activeTab, setActiveTab } = useApp();
+  const [isAddingBusiness, setIsAddingBusiness] = useState(false);
   const [hasLanded, setHasLanded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [tempKey, setTempKey] = useState('');
   const APP_VERSION = '2.0';
 
   const allTabs = useMemo(() => [
@@ -40,8 +40,7 @@ function MainApp() {
     { id: 'transactions', label: 'Transactions', icon: Activity, visible: !!menuAccess?.transactions },
     { id: 'budgets', label: 'Categories', icon: Wallet, visible: !!menuAccess?.budgets },
     { id: 'ai', label: 'AI Chat', icon: MessageSquare, visible: !!menuAccess?.ai },
-    { id: 'users', label: 'Users', icon: UsersIcon, visible: userRole === 'Admin' || !!menuAccess?.users },
-  ], [menuAccess, userRole]);
+  ], [menuAccess]);
 
   const visibleTabs = useMemo(() => allTabs.filter(t => t.visible), [allTabs]);
 
@@ -57,7 +56,7 @@ function MainApp() {
   useEffect(() => {
     if (!menuAccess) return;
     
-    const isCurrentTabVisible = visibleTabs.some(t => t.id === activeTab);
+    const isCurrentTabVisible = visibleTabs.some(t => t.id === activeTab) || activeTab === 'business-settings';
     if (activeTab && !isCurrentTabVisible && visibleTabs.length > 0) {
        setActiveTab(visibleTabs[0].id);
     }
@@ -100,12 +99,12 @@ function MainApp() {
                    Professional Health <span className="text-[#86BC24]">AI Engine</span>.
                 </h1>
                 <p className="text-slate-400 text-lg leading-relaxed max-w-sm">
-                  The most secure way to track expenses, manage budgets, and analyze financials with end-to-end encryption.
+                  The most secure way to track expenses, manage budgets, and analyze financials.
                 </p>
                 <div className="flex flex-col gap-4 pt-4">
                    <div className="flex items-center gap-3 text-sm font-medium text-slate-300">
                       <ShieldCheck size={18} className="text-[#86BC24]" />
-                      Zero-Knowledge Encryption
+                      Real-time Financial Tracking
                    </div>
                    <div className="flex items-center gap-3 text-sm font-medium text-slate-300">
                       <Activity size={18} className="text-[#86BC24]" />
@@ -128,8 +127,8 @@ function MainApp() {
           <div className="p-12 flex flex-col justify-center bg-white">
             <div className="max-w-sm mx-auto w-full space-y-8">
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-[#1E293B] tracking-tight">Access Secure Vault</h2>
-                <p className="text-[#64748B] text-sm">Sign in to sync your encrypted financial records.</p>
+                <h2 className="text-2xl font-bold text-[#1E293B] tracking-tight">Access Financial Dashboard</h2>
+                <p className="text-[#64748B] text-sm">Sign in to sync your financial records.</p>
               </div>
 
               <div className="space-y-4">
@@ -162,42 +161,8 @@ function MainApp() {
     );
   }
 
-  if (!encryptionKey) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full dashboard-card space-y-6"
-        >
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900">Encryption Required</h2>
-            <p className="text-slate-500 text-sm">
-              Enter a master key to encrypt and decrypt your financial data. This key is never stored on our servers.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <input 
-              type="password"
-              placeholder="Your Master Key"
-              value={tempKey}
-              onChange={(e) => setTempKey(e.target.value)}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-            <button 
-              onClick={() => setEncryptionKey(tempKey)}
-              disabled={!tempKey}
-              className="w-full btn-primary py-3"
-            >
-              Unlock Dashboard
-            </button>
-          </div>
-          <p className="text-xs text-slate-400 text-center">
-            Make sure to save this key. If you lose it, your data will be permanently unrecoverable.
-          </p>
-        </motion.div>
-      </div>
-    );
+  if (user && businesses.length === 0) {
+    return <BusinessSetup />;
   }
 
   return (
@@ -273,21 +238,11 @@ function MainApp() {
 
       {/* Main Content */}
       <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
-        <header className="glass-header px-6 py-4 flex items-center justify-between lg:justify-end">
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 text-slate-500">
-            <Menu size={24} />
-          </button>
-          
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-medium rounded-full border border-green-100">
-              <ShieldCheck size={14} />
-              Encrypted Session
-            </div>
-            <button onClick={() => setEncryptionKey(null)} className="text-slate-400 hover:text-slate-600 transition-colors" title="Lock Session">
-              <X size={20} />
-            </button>
-          </div>
-        </header>
+        <Header 
+          onOpenSidebar={() => setSidebarOpen(true)} 
+          onSettingsClick={() => setActiveTab('business-settings')}
+          onAddBusinessClick={() => setIsAddingBusiness(true)}
+        />
 
         <section className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8">
           <AnimatePresence mode="wait">
@@ -302,10 +257,17 @@ function MainApp() {
               {activeTab === 'transactions' && <Transactions />}
               {activeTab === 'budgets' && <BudgetManager />}
               {activeTab === 'ai' && <AIChat />}
-              {activeTab === 'users' && <Users />}
+              {activeTab === 'business-settings' && <BusinessSettings />}
             </motion.div>
           </AnimatePresence>
         </section>
+
+        {/* New Business Modal */}
+        <AnimatePresence>
+          {isAddingBusiness && (
+            <BusinessSetup onClose={() => setIsAddingBusiness(false)} />
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

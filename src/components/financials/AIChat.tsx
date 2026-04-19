@@ -2,7 +2,6 @@ import ReactMarkdown from 'react-markdown';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../AppContext';
 import { analyzeFinancialHealth, generateSummaryReport } from '../../lib/gemini';
-import { decryptPayload } from '../../lib/encryption';
 import { logEvent } from '../../lib/audit';
 import { MessageSquare, Send, Bot, User, Loader2, Download, Trash2, HelpCircle, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -21,19 +20,19 @@ interface Message {
 }
 
 export default function AIChat() {
-  const { finData, encryptionKey, user } = useApp();
+  const { finData, user } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const decryptedExpenses = useMemo(() => {
-    if (!encryptionKey) return [];
+  const processedExpenses = useMemo(() => {
     return finData.expenses.map(e => ({
       ...e,
-      ...decryptPayload(e.encryptedData, encryptionKey)
+      description: e.description || 'No Description',
+      notes: e.notes || ''
     }));
-  }, [finData.expenses, encryptionKey]);
+  }, [finData.expenses]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -57,13 +56,13 @@ export default function AIChat() {
 
     try {
       // Prepare context for Gemini
-      const totalSpent = decryptedExpenses.reduce((sum, e) => sum + e.amount, 0);
+      const totalSpent = processedExpenses.reduce((sum, e) => sum + e.amount, 0);
       const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
       const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
 
       const aiResults = await analyzeFinancialHealth({
         ...finData,
-        expenses: decryptedExpenses,
+        expenses: processedExpenses,
         summary: {
           totalSpent,
           totalBudget,
@@ -103,13 +102,13 @@ export default function AIChat() {
     setIsTyping(true);
 
     try {
-      const totalSpent = decryptedExpenses.reduce((sum, e) => sum + e.amount, 0);
+      const totalSpent = processedExpenses.reduce((sum, e) => sum + e.amount, 0);
       const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
       const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
 
       const aiResults = await generateSummaryReport({
         ...finData,
-        expenses: decryptedExpenses,
+        expenses: processedExpenses,
         summary: {
           totalSpent,
           totalBudget,
@@ -277,7 +276,7 @@ export default function AIChat() {
             </div>
             <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-4 rounded-lg rounded-tl-none flex items-center gap-3">
               <Loader2 size={14} className="animate-spin text-[#86BC24]" />
-              <span className="text-xs text-[#64748B] font-semibold uppercase tracking-wider">Processing Encrypted Data...</span>
+              <span className="text-xs text-[#64748B] font-semibold uppercase tracking-wider">Processing Financial Data...</span>
             </div>
           </div>
         )}

@@ -26,7 +26,7 @@ service cloud.firestore {
       return data.timestamp is string
         && data.userId == request.auth.uid
         && data.action in ["CREATE", "UPDATE", "DELETE", "VIEW", "IMPORT", "EXPORT", "INVITE", "LOGIN"]
-        && data.resourceType in ["expense", "budget", "account", "investment", "user_config", "dashboard", "ai_assistant"];
+        && data.resourceType in ["business", "expense", "budget", "account", "investment", "user_config", "dashboard", "ai_assistant"];
     }
 
     // --- Audit Log Rules ---
@@ -42,13 +42,12 @@ service cloud.firestore {
         && data.name is string && data.name.size() <= 200
         && data.role in ['Admin', 'User']
         && data.menuAccess is map
-        && data.menuAccess.keys().hasAll(['dashboard', 'transactions', 'budgets', 'ai', 'users'])
-        && data.menuAccess.keys().size() == 5
+        && data.menuAccess.keys().hasAll(['dashboard', 'transactions', 'budgets', 'ai'])
+        && data.menuAccess.keys().size() == 4
         && data.menuAccess.dashboard is bool
         && data.menuAccess.transactions is bool
         && data.menuAccess.budgets is bool
         && data.menuAccess.ai is bool
-        && data.menuAccess.users is bool
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
@@ -79,14 +78,34 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // --- Business Rules ---
+    function isValidBusiness(data) {
+      return data.name is string && data.name.size() <= 200
+        && data.type in ['personal', 'business']
+        && data.currency is string && data.currency.size() <= 10
+        && data.timezone is string && data.timezone.size() <= 100
+        && data.userId == request.auth.uid
+        && (data.get('createdAt', null) == null || data.createdAt is string)
+        && (data.get('updatedAt', null) == null || data.updatedAt is string);
+    }
+
+    match /users/{userId}/businesses/{businessId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(businessId) && isValidBusiness(incoming());
+      allow update: if isOwner(userId) && isValidBusiness(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+
     // --- Expense Rules ---
     function isValidExpense(data) {
       return data.amount is number 
         && data.category is string && data.category.size() <= 100
         && data.date is string && data.date.size() <= 50
         && data.accountId is string && data.accountId.size() <= 100
-        && data.encryptedData is string && data.encryptedData.size() <= 5000
+        && data.businessId is string && data.businessId.size() <= 100
         && data.userId == request.auth.uid
+        && (data.get('description', null) == null || data.description is string)
+        && (data.get('notes', null) == null || data.notes is string)
         && (data.get('audited', null) == null || data.audited is bool)
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
@@ -105,6 +124,7 @@ service cloud.firestore {
         && data.amount is number
         && data.month is number && data.month >= 1 && data.month <= 12
         && data.year is number
+        && data.businessId is string && data.businessId.size() <= 100
         && data.userId == request.auth.uid
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
@@ -122,6 +142,7 @@ service cloud.firestore {
       return data.name is string && data.name.size() <= 100
         && data.balance is number
         && data.type in ['savings', 'checking', 'credit', 'investment']
+        && data.businessId is string && data.businessId.size() <= 100
         && data.userId == request.auth.uid
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
@@ -140,6 +161,7 @@ service cloud.firestore {
         && data.quantity is number
         && data.purchasePrice is number
         && data.assetClass is string && data.assetClass.size() <= 100
+        && data.businessId is string && data.businessId.size() <= 100
         && data.userId == request.auth.uid
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);

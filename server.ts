@@ -4,6 +4,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
 import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,7 +41,15 @@ async function startServer() {
         return res.status(400).json({ error: "Missing 'prompt' in request body." });
       }
 
-      // Using the models.generateContent pattern found in the previous codebase
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Server configuration error: Gemini API key missing." });
+      }
+
+      // Re-initialize for every request for isolation
+      const ai = new GoogleGenAI({ apiKey });
+
+      // Using the models.generateContent pattern as per guidelines
       const result = await (ai as any).models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
@@ -47,16 +58,27 @@ async function startServer() {
         },
       });
 
+      if (!result || !result.text) {
+        throw new Error("Empty response from Gemini API");
+      }
+
       res.json({
-        text: result.text || "No response generated",
+        text: result.text,
         metadata: {
           model: "gemini-3-flash-preview",
           timestamp: new Date().toISOString()
         }
       });
     } catch (error: any) {
-      console.error("External API Error:", error);
-      res.status(500).json({ error: error.message || "Failed to generate content." });
+      console.error("Backend AI Proxy Error Details:", {
+        message: error.message,
+        stack: error.stack,
+        details: error.details
+      });
+      res.status(500).json({ 
+        error: "Internal Intelligence Error", 
+        message: error.message 
+      });
     }
   });
 

@@ -1,3 +1,5 @@
+import { GoogleGenAI } from "@google/genai";
+
 export interface FinancialData {
   expenses: any[];
   budgets: any[];
@@ -40,32 +42,32 @@ export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: st
   const prompt = userQuery || "Analyze my current financial health and identify the top 3 risks.";
 
   try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        prompt: `${systemInstruction}\n\nUser Question: ${prompt}` 
-      })
+    const ai = new GoogleGenAI({ apiKey: (process.env as any).GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `${systemInstruction}\n\nUser Question: ${prompt}`,
+      config: {
+        temperature: 0.7,
+      },
     });
 
-    if (!response.ok) throw new Error('Failed to fetch from externalized AI API');
-    
-    const result = await response.json();
-
     return {
-      text: result.text,
+      text: response.text || "No analysis could be generated.",
       metadata: {
-        ...result.metadata,
-        correlationId: `EXT-${Date.now()}`,
-        dataSnapshot: `DTA-${data.expenses.length}e`
+        correlationId: `INT-${Date.now()}`,
+        dataSnapshot: `DTA-${data.expenses.length}e`,
+        timestamp: new Date().toISOString(),
+        modelUsed: "gemini-3-flash-preview"
       }
     };
   } catch (error) {
-    console.error("Externalized Gemini Analysis Error:", error);
+    console.error("Internal Gemini Analysis Error:", error);
     return {
-      text: "I'm sorry, I encountered a technical issue while analyzing your data via the external API.",
+      text: "I'm sorry, I encountered a technical issue while analyzing your data locally.",
       metadata: {
         correlationId: "ERROR-" + Date.now(),
+        dataSnapshot: "ERROR",
+        modelUsed: "gemini-3-flash-preview",
         timestamp: new Date().toISOString()
       }
     };

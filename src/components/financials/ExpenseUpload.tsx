@@ -1,16 +1,15 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { useApp } from '../../AppContext';
-import { encryptPayload } from '../../lib/encryption';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { logEvent } from '../../lib/audit';
-import { Upload, X, CheckCircle2, AlertCircle, HelpCircle } from 'lucide-react';
+import { ArrowDown, X, CheckCircle2, AlertCircle, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 
 export default function ExpenseUpload() {
-  const { user, encryptionKey, finData } = useApp();
+  const { user, finData, activeBusinessId } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -19,7 +18,7 @@ export default function ExpenseUpload() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !user || !encryptionKey) return;
+    if (!file || !user || !activeBusinessId) return;
 
     setIsUploading(true);
     setFeedback(null);
@@ -74,20 +73,14 @@ export default function ExpenseUpload() {
             const description = row.description || 'No description';
             const accountId = 'default';
 
-            const payload = {
-              description,
-              notes: row.notes || '',
-              metadata: { originalRow: row }
-            };
-
-            const encryptedData = encryptPayload(payload, encryptionKey);
-
             await addDoc(collection(db, 'users', user.uid, 'expenses'), {
               amount,
               category,
               date,
+              description,
+              notes: row.notes || '',
               accountId,
-              encryptedData,
+              businessId: activeBusinessId,
               userId: user.uid,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString()
@@ -159,9 +152,12 @@ export default function ExpenseUpload() {
 
   return (
     <>
-      <button onClick={() => setIsOpen(true)} className="btn-primary flex items-center gap-2">
-        <Upload size={18} />
-        Upload CSV
+      <button 
+        onClick={() => setIsOpen(true)} 
+        className="flex items-center gap-2 h-[42px] px-6 bg-[#334155] hover:bg-[#334155]/90 text-white rounded-lg font-bold uppercase text-[10px] tracking-widest transition-all shadow-sm"
+      >
+        <ArrowDown size={18} />
+        Import
       </button>
 
       <AnimatePresence>
@@ -192,7 +188,7 @@ export default function ExpenseUpload() {
                   <div className="flex gap-3 text-slate-600">
                     <HelpCircle size={20} className="text-[#86BC24] shrink-0 mt-0.5" />
                     <p className="text-xs leading-relaxed">
-                      Expected headers: <span className="font-mono font-bold bg-white px-1 border border-slate-200">date, amount, category, description</span>. All data is AES-encrypted before storage.
+                      Expected headers: <span className="font-mono font-bold bg-white px-1 border border-slate-200">date, amount, category, description</span>.
                     </p>
                   </div>
                   <button 
@@ -208,7 +204,7 @@ export default function ExpenseUpload() {
                   className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-indigo-400 hover:bg-slate-50 transition-all cursor-pointer group"
                 >
                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-indigo-50 transition-colors">
-                    <Upload size={32} className="text-slate-400 group-hover:text-indigo-500" />
+                    <ArrowDown size={32} className="text-slate-400 group-hover:text-indigo-500" />
                   </div>
                   <p className="font-bold text-slate-800">Click to upload CSV</p>
                   <p className="text-sm text-slate-500 mt-1">or drag and drop here</p>
@@ -225,7 +221,7 @@ export default function ExpenseUpload() {
                 {isUploading && (
                   <div className="flex items-center justify-center gap-3 text-indigo-600 font-medium animate-pulse">
                     <Activity size={20} className="animate-spin" />
-                    Processing and Encrypting...
+                    Processing and Saving...
                   </div>
                 )}
 

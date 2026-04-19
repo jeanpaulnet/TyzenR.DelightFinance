@@ -1,52 +1,43 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../AppContext';
-import { decryptPayload, encryptPayload } from '../../lib/encryption';
-import { formatCurrency, cn } from '../../lib/utils';
+import { formatCurrency, getCurrencySymbol, cn } from '../../lib/utils';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { logEvent } from '../../lib/audit';
 import { 
   Calendar as CalendarIcon, 
   Search, 
-  Filter, 
   Plus, 
   Trash2, 
   Edit2, 
-  Check, 
   X,
+  Save,
   ArrowUpDown,
-  Download,
-  MoreVertical,
   ChevronLeft,
-  ChevronRight,
-  History,
-  ShieldCheck
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ExpenseUpload from './ExpenseUpload';
-import HistoryModal from './HistoryModal';
+import { BudgetBarChart } from '../ui/FinancialCharts';
 
 export default function Transactions() {
-  const { finData, encryptionKey, user } = useApp();
+  const { finData, user, activeBusinessId, dateFilter, businesses } = useApp();
+  const activeBusiness = useMemo(() => businesses.find(b => b.id === activeBusinessId), [businesses, activeBusinessId]);
+  const currencyCode = activeBusiness?.currency || 'USD';
   
-  // Date range state - default to current month
-  const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-  
-  const [startDate, setStartDate] = useState(firstDay);
-  const [endDate, setEndDate] = useState(lastDay);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category' | 'description'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
   // CRUD state
-  const [isAdding, setIsAdding] = useState(false);
+  const [isAdding, setIsAdding] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingDescription, setDeletingDescription] = useState('');
-  const [historyResourceId, setHistoryResourceId] = useState<string | null>(null);
-  const [historyTitle, setHistoryTitle] = useState('');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
   
   useEffect(() => {
     if (user) {
@@ -60,27 +51,37 @@ export default function Transactions() {
     }
   }, [user]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, dateFilter, itemsPerPage]);
+
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     amount: '',
     category: '',
     description: '',
-    notes: '',
-    audited: false
+    notes: ''
   });
 
-  const decryptedExpenses = useMemo(() => {
-    if (!encryptionKey) return [];
+  // Unique list of categories from all budgets to populate dropdown correctly
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    finData.budgets.forEach(b => cats.add(b.category));
+    return Array.from(cats).sort();
+  }, [finData.budgets]);
+
+  const processedExpenses = useMemo(() => {
     return finData.expenses.map(e => ({
       ...e,
-      ...decryptPayload(e.encryptedData, encryptionKey)
+      description: e.description || 'No Description',
+      notes: e.notes || ''
     }));
-  }, [finData.expenses, encryptionKey]);
+  }, [finData.expenses]);
 
   const filteredExpenses = useMemo(() => {
-    const filtered = decryptedExpenses.filter(e => {
+    const filtered = processedExpenses.filter(e => {
       const expDate = e.date.split('T')[0];
-      const matchesDate = expDate >= startDate && expDate <= endDate;
+      const matchesDate = expDate >= dateFilter.startDate && expDate <= dateFilter.endDate;
       const matchesSearch = e.description?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            e.category?.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesDate && matchesSearch;
@@ -108,7 +109,27 @@ export default function Transactions() {
       
       return sortDirection === 'asc' ? comparison : -comparison;
     });
-  }, [decryptedExpenses, startDate, endDate, searchTerm, sortField, sortDirection]);
+  }, [processedExpenses, dateFilter, searchTerm, sortField, sortDirection]);
+
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredExpenses.slice(start, start + itemsPerPage);
+  }, [filteredExpenses, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
+
+  const categoricalChartData = useMemo(() => {
+    const actualsByCategory = filteredExpenses.reduce((acc: Record<string, number>, exp) => {
+      acc[exp.category] = (acc[exp.category] || 0) + exp.amount;
+      return acc;
+    }, {});
+
+    return finData.budgets.map(b => ({
+      category: b.category,
+      budget: b.amount,
+      actual: actualsByCategory[b.category] || 0
+    })).filter(d => d.budget > 0 || d.actual > 0);
+  }, [filteredExpenses, finData.budgets]);
 
   const toggleSort = (field: 'date' | 'amount' | 'category' | 'description') => {
     if (sortField === field) {
@@ -121,25 +142,18 @@ export default function Transactions() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !encryptionKey) return;
+    if (!user || !activeBusinessId) return;
     
     try {
-      const payload = {
-        description: formData.description,
-        notes: formData.notes,
-        metadata: { manualEntry: true }
-      };
-      
-      const encryptedData = encryptPayload(payload, encryptionKey);
-      
       const newDoc = await addDoc(collection(db, 'users', user.uid, 'expenses'), {
         amount: parseFloat(formData.amount),
-        category: formData.category.toLowerCase().trim(),
+        category: formData.category.trim(),
         date: new Date(formData.date).toISOString(),
+        description: formData.description,
+        notes: formData.notes,
         accountId: 'default',
-        encryptedData,
+        businessId: activeBusinessId,
         userId: user.uid,
-        audited: formData.audited,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -152,7 +166,7 @@ export default function Transactions() {
         resourceType: 'expense',
         resourceId: newDoc.id,
         resourceName: formData.description,
-        details: `Created transaction for ${formatCurrency(parseFloat(formData.amount))} in ${formData.category}${formData.audited ? ' (PRE-AUDITED)' : ''}`
+        details: `Created transaction for ${formatCurrency(parseFloat(formData.amount), currencyCode)} in ${formData.category}`
       });
       
       setIsAdding(false);
@@ -164,23 +178,15 @@ export default function Transactions() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !encryptionKey || !editingId) return;
+    if (!user || !editingId) return;
     
     try {
-      const payload = {
-        description: formData.description,
-        notes: formData.notes,
-        metadata: { updated: true }
-      };
-      
-      const encryptedData = encryptPayload(payload, encryptionKey);
-      
       await updateDoc(doc(db, 'users', user.uid, 'expenses', editingId), {
         amount: parseFloat(formData.amount),
-        category: formData.category.toLowerCase().trim(),
+        category: formData.category.trim(),
         date: new Date(formData.date).toISOString(),
-        encryptedData,
-        audited: formData.audited,
+        description: formData.description,
+        notes: formData.notes,
         updatedAt: new Date().toISOString()
       });
 
@@ -192,7 +198,7 @@ export default function Transactions() {
         resourceType: 'expense',
         resourceId: editingId,
         resourceName: formData.description,
-        details: `Updated entry. Status: ${formData.audited ? 'AUDITED' : 'PENDING'}. Amount: ${formatCurrency(parseFloat(formData.amount))}`
+        details: `Updated entry. Amount: ${formatCurrency(parseFloat(formData.amount), currencyCode)}`
       });
       
       setEditingId(null);
@@ -223,30 +229,6 @@ export default function Transactions() {
     }
   };
 
-  const handleToggleAudited = async (exp: any) => {
-    if (!user) return;
-    const newStatus = !exp.audited;
-    try {
-      await updateDoc(doc(db, 'users', user.uid, 'expenses', exp.id), {
-        audited: newStatus,
-        updatedAt: new Date().toISOString()
-      });
-
-      await logEvent({
-        userId: user.uid,
-        userEmail: user.email || 'unknown',
-        userName: user.displayName || 'Delight User',
-        action: 'UPDATE',
-        resourceType: 'expense',
-        resourceId: exp.id,
-        resourceName: exp.description,
-        details: `Toggled audit status to ${newStatus ? 'AUDITED' : 'UNAUDITED'}`
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const startEdit = (exp: any) => {
     setEditingId(exp.id);
     setFormData({
@@ -254,8 +236,7 @@ export default function Transactions() {
       amount: exp.amount.toString(),
       category: exp.category,
       description: exp.description,
-      notes: exp.notes || '',
-      audited: !!exp.audited
+      notes: exp.notes || ''
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -266,62 +247,37 @@ export default function Transactions() {
       amount: '',
       category: '',
       description: '',
-      notes: '',
-      audited: false
+      notes: ''
     });
   };
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Transactions</h1>
-          <p className="text-slate-500 text-sm italic">Manage and audit your encrypted financial ledger.</p>
+        </div>
+        <div className="flex flex-1 max-w-md relative group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#86BC24] transition-colors" size={16} />
+          <input 
+            type="text"
+            placeholder="Search by description or category..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-xl text-sm outline-none focus:border-[#86BC24] transition-all shadow-sm"
+          />
         </div>
         <div className="flex items-center gap-3">
           <ExpenseUpload />
-          <button 
-            onClick={() => setIsAdding(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Plus size={18} />
-            Add Transaction
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div className="space-y-1 md:col-span-2">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Search</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input 
-              type="text"
-              placeholder="Filter by description or category..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-[#86BC24] transition-colors"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">From</label>
-          <input 
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-[#86BC24] transition-colors"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">To</label>
-          <input 
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-[#86BC24] transition-colors"
-          />
+          {(!isAdding && !editingId) && (
+            <button 
+              onClick={() => setIsAdding(true)}
+              className="btn-primary flex items-center gap-2 h-[42px] px-6"
+            >
+              <Plus size={18} />
+              Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -333,18 +289,31 @@ export default function Transactions() {
             exit={{ opacity: 0, y: -10 }}
             className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-md"
           >
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                 {editingId ? 'Edit Transaction' : 'New Transaction'}
               </h2>
-              <button 
-                onClick={() => { setIsAdding(false); setEditingId(null); resetForm(); }}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  type="submit" 
+                  form="tx-form"
+                  className="bg-[#86BC24] text-white px-4 py-1.5 rounded-lg font-bold uppercase text-[10px] tracking-widest hover:bg-[#75A51F] transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <Save size={12} />
+                  Save
+                </button>
+                <div className="w-px h-4 bg-slate-200 mx-1" />
+                <button 
+                  type="button"
+                  onClick={() => { setIsAdding(false); setEditingId(null); resetForm(); }}
+                  className="text-slate-400 hover:text-slate-600 transition-colors p-1"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
-            <form onSubmit={editingId ? handleUpdate : handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <form id="tx-form" onSubmit={editingId ? handleUpdate : handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</label>
                 <input 
@@ -355,12 +324,17 @@ export default function Transactions() {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount</label>
-                <input 
-                  type="number" step="0.01" required value={formData.amount}
-                  onChange={e => setFormData({...formData, amount: e.target.value})}
-                  placeholder="0.00"
-                  className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm font-mono"
-                />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
+                    {getCurrencySymbol(currencyCode)}
+                  </span>
+                  <input 
+                    type="number" step="0.01" required value={formData.amount}
+                    onChange={e => setFormData({...formData, amount: e.target.value})}
+                    placeholder="0.00"
+                    className="w-full pl-12 pr-4 py-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm font-mono"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
@@ -370,8 +344,8 @@ export default function Transactions() {
                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
                 >
                   <option value="">Select Category</option>
-                  {finData.budgets.map(b => (
-                    <option key={b.id} value={b.category}>{b.category}</option>
+                  {availableCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
               </div>
@@ -384,39 +358,6 @@ export default function Transactions() {
                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
                 />
               </div>
-              <div className="md:col-span-3 space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Notes (Optional)</label>
-                <input 
-                  value={formData.notes}
-                  onChange={e => setFormData({...formData, notes: e.target.value})}
-                  placeholder="Add context or tags..."
-                  className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
-                />
-              </div>
-                <div className="md:col-span-1 flex items-center gap-2 pt-6">
-                  <input 
-                    type="checkbox"
-                    id="audited"
-                    checked={formData.audited}
-                    onChange={e => setFormData({...formData, audited: e.target.checked})}
-                    className="w-4 h-4 text-[#86BC24] border-slate-300 rounded focus:ring-[#86BC24]"
-                  />
-                  <label htmlFor="audited" className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">
-                     Audited
-                  </label>
-                </div>
-                <div className="md:col-span-4 flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
-                  <button 
-                    type="button"
-                    onClick={() => { setEditingId(null); setIsAdding(false); resetForm(); }}
-                    className="px-6 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn-primary px-8 py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
-                    {editingId ? 'Save Changes' : 'Commit Entry'}
-                  </button>
-                </div>
             </form>
           </motion.div>
         )}
@@ -463,12 +404,11 @@ export default function Transactions() {
                     <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredExpenses.map((exp) => (
+              {paginatedExpenses.map((exp) => (
                 <tr key={exp.id} className="group hover:bg-slate-50/80 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-xs font-mono text-slate-500">
@@ -488,41 +428,11 @@ export default function Transactions() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm font-bold text-slate-900">
-                      {formatCurrency(exp.amount)}
+                      {formatCurrency(exp.amount, currencyCode)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button 
-                      onClick={() => handleToggleAudited(exp)}
-                      className={cn(
-                        "flex items-center gap-2 px-2 py-1 rounded text-[10px] font-bold uppercase transition-all border",
-                        exp.audited 
-                          ? "bg-green-50 text-green-700 border-green-100" 
-                          : "bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-200"
-                      )}
-                    >
-                      {exp.audited ? (
-                        <>
-                          <ShieldCheck size={12} className="text-[#86BC24]" />
-                          Audited
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-3 h-3 rounded-full border border-slate-300" />
-                          Pending
-                        </>
-                      )}
-                    </button>
-                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="flex justify-end gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => { setHistoryResourceId(exp.id); setHistoryTitle(exp.description); }}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                        title="View History"
-                      >
-                        <History size={14} />
-                      </button>
+                    <div className="flex justify-end gap-1 transition-opacity">
                       <button 
                         onClick={() => startEdit(exp)}
                         className="p-1.5 text-slate-400 hover:text-[#86BC24] hover:bg-green-50 rounded transition-colors"
@@ -545,6 +455,71 @@ export default function Transactions() {
           </table>
         </div>
         
+        {filteredExpenses.length > 0 && (
+          <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Show</span>
+                <select 
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                  className="bg-white border border-slate-200 rounded-lg text-xs py-1 px-2 outline-none focus:border-[#86BC24]"
+                >
+                  {[5, 10, 50, 100].map(size => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-slate-500">
+                Showing <span className="font-bold text-slate-900">{Math.min(filteredExpenses.length, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(filteredExpenses.length, currentPage * itemsPerPage)}</span> of <span className="font-bold text-slate-900">{filteredExpenses.length}</span>
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 text-slate-400 hover:text-[#86BC24] disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum = i + 1;
+                  if (totalPages > 5 && currentPage > 3) {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  if (pageNum > totalPages) return null;
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={cn(
+                        "w-8 h-8 rounded-lg text-xs font-bold transition-all",
+                        currentPage === pageNum 
+                          ? "bg-[#86BC24] text-white shadow-md shadow-green-200" 
+                          : "text-slate-500 hover:bg-slate-100"
+                      )}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="p-2 text-slate-400 hover:text-[#86BC24] disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {filteredExpenses.length === 0 && (
           <div className="py-20 text-center space-y-4">
             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300">
@@ -557,12 +532,20 @@ export default function Transactions() {
           </div>
         )}
       </div>
-      <HistoryModal 
-        isOpen={!!historyResourceId}
-        onClose={() => setHistoryResourceId(null)}
-        title={historyTitle}
-        resourceId={historyResourceId || undefined}
-      />
+
+      {categoricalChartData.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mt-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Categorical Performance</h2>
+              <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Current Filtered Range: Budget vs Actual</p>
+            </div>
+          </div>
+          <div className="h-[350px]">
+             <BudgetBarChart data={categoricalChartData} height={350} />
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {deletingId && (

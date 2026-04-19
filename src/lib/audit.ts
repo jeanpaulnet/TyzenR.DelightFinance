@@ -2,7 +2,7 @@ import { db } from './firebase';
 import { collection, addDoc } from 'firebase/firestore';
 
 export type AuditAction = "CREATE" | "UPDATE" | "DELETE" | "VIEW" | "IMPORT" | "EXPORT" | "INVITE" | "LOGIN";
-export type ResourceType = "expense" | "budget" | "account" | "investment" | "user_config" | "dashboard" | "ai_assistant";
+export type ResourceType = "expense" | "budget" | "account" | "investment" | "user_config" | "dashboard" | "ai_assistant" | "business";
 
 interface AuditEvent {
   userId: string;
