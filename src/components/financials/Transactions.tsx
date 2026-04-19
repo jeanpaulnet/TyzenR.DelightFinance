@@ -32,6 +32,7 @@ export default function Transactions() {
   // CRUD state
   const [isAdding, setIsAdding] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingDescription, setDeletingDescription] = useState('');
   
@@ -201,6 +202,7 @@ export default function Transactions() {
         details: `Updated entry. Amount: ${formatCurrency(parseFloat(formData.amount), currencyCode)}`
       });
       
+      setIsEditing(false);
       setEditingId(null);
       resetForm();
     } catch (err) {
@@ -238,7 +240,7 @@ export default function Transactions() {
       description: exp.description,
       notes: exp.notes || ''
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsEditing(true);
   };
 
   const resetForm = () => {
@@ -282,7 +284,7 @@ export default function Transactions() {
       </div>
 
       <AnimatePresence>
-        {(isAdding || editingId) && (
+        {isAdding && !isEditing && (
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -291,7 +293,7 @@ export default function Transactions() {
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                {editingId ? 'Edit Transaction' : 'New Transaction'}
+                New Transaction
               </h2>
               <div className="flex items-center gap-2">
                 <button 
@@ -313,7 +315,7 @@ export default function Transactions() {
                 </button>
               </div>
             </div>
-            <form id="tx-form" onSubmit={editingId ? handleUpdate : handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <form id="tx-form" onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</label>
                 <input 
@@ -404,6 +406,9 @@ export default function Transactions() {
                     <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-[#86BC24] transition-colors">
+                  Notes
+                </th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
@@ -416,10 +421,7 @@ export default function Transactions() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 leading-tight">{exp.description}</p>
-                      {exp.notes && <p className="text-[10px] text-slate-400 mt-0.5">{exp.notes}</p>}
-                    </div>
+                    <p className="text-sm font-bold text-slate-900 leading-tight">{exp.description}</p>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
@@ -430,6 +432,11 @@ export default function Transactions() {
                     <span className="text-sm font-bold text-slate-900">
                       {formatCurrency(exp.amount, currencyCode)}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <p className="text-[10px] text-slate-500 truncate max-w-[150px]" title={exp.notes || ''}>
+                      {exp.notes || '-'}
+                    </p>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end gap-1 transition-opacity">
@@ -548,6 +555,117 @@ export default function Transactions() {
       )}
 
       <AnimatePresence>
+        {isEditing && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); }}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#86BC24]/10 flex items-center justify-center text-[#86BC24]">
+                    <Edit2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">Edit Transaction</h3>
+                    <p className="text-xs text-slate-500">Update transaction details and notes.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); }}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdate} className="space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Date</label>
+                    <input 
+                      type="date" required value={formData.date}
+                      onChange={e => setFormData({...formData, date: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Amount</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
+                        {getCurrencySymbol(currencyCode)}
+                      </span>
+                      <input 
+                        type="number" step="0.01" required value={formData.amount}
+                        onChange={e => setFormData({...formData, amount: e.target.value})}
+                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-[#86BC24] transition-all font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Category</label>
+                  <select 
+                    required value={formData.category}
+                    onChange={e => setFormData({...formData, category: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
+                  >
+                    <option value="">Select Category</option>
+                    {availableCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Description</label>
+                  <input 
+                    required value={formData.description}
+                    onChange={e => setFormData({...formData, description: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Notes</label>
+                  <textarea 
+                    value={formData.notes}
+                    onChange={e => setFormData({...formData, notes: e.target.value})}
+                    placeholder="Add additional context or details..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all min-h-[100px] resize-none"
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-[#86BC24] text-white py-4 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-[#86BC24]/20 hover:bg-[#75A51F] transition-all"
+                  >
+                    Save Changes
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); }}
+                    className="px-8 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm uppercase tracking-widest hover:bg-slate-200 transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
         {deletingId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
