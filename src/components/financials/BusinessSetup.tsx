@@ -30,18 +30,38 @@ const TIMEZONES = [
   'Australia/Sydney',
 ];
 
-const DEFAULT_CATEGORIES = [
-  { category: 'Housing', amount: 0 },
-  { category: 'Food', amount: 0 },
-  { category: 'Health', amount: 0 },
-  { category: 'Transportation', amount: 0 },
-  { category: 'Utility', amount: 0 },
-  { category: 'Education', amount: 0 },
-  { category: 'Entertainment', amount: 0 },
-  { category: 'Gifts', amount: 0 },
-  { category: 'Loans', amount: 0 },
-  { category: 'Business', amount: 0 },
-  { category: 'Miscellaneous', amount: 0 },
+const PERSONAL_CATEGORIES = [
+  { category: 'Housing', amount: 0, type: 'Expense' },
+  { category: 'Food', amount: 0, type: 'Expense' },
+  { category: 'Health', amount: 0, type: 'Expense' },
+  { category: 'Transportation', amount: 0, type: 'Expense' },
+  { category: 'Utility', amount: 0, type: 'Expense' },
+  { category: 'Education', amount: 0, type: 'Expense' },
+  { category: 'Entertainment', amount: 0, type: 'Expense' },
+  { category: 'Gifts', amount: 0, type: 'Expense' },
+  { category: 'Loans', amount: 0, type: 'Expense' },
+  { category: 'Business', amount: 0, type: 'Expense' },
+  { category: 'Miscellaneous', amount: 0, type: 'Expense' },
+  { category: 'Salary Income', amount: 0, type: 'Income' },
+  { category: 'Passive Income', amount: 0, type: 'Income' },
+  { category: 'Business Income', amount: 0, type: 'Income' },
+  { category: 'Portfolio Income', amount: 0, type: 'Income' },
+];
+
+const BUSINESS_CATEGORIES = [
+  { category: 'Rent & Lease', amount: 0, type: 'Expense' },
+  { category: 'Payroll', amount: 0, type: 'Expense' },
+  { category: 'Supplies', amount: 0, type: 'Expense' },
+  { category: 'Marketing', amount: 0, type: 'Expense' },
+  { category: 'Utilities', amount: 0, type: 'Expense' },
+  { category: 'Travel', amount: 0, type: 'Expense' },
+  { category: 'Software & Tools', amount: 0, type: 'Expense' },
+  { category: 'Tax', amount: 0, type: 'Expense' },
+  { category: 'Insurance', amount: 0, type: 'Expense' },
+  { category: 'Professional Services', amount: 0, type: 'Expense' },
+  { category: 'Services Revenue', amount: 0, type: 'Income' },
+  { category: 'Product Sales', amount: 0, type: 'Income' },
+  { category: 'Other Income', amount: 0, type: 'Income' },
 ];
 
 export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
@@ -68,10 +88,12 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
         updatedAt: new Date().toISOString()
       });
 
-      // Initialize default budgets for the new business
+      // Initialize default budgets for the new business based on type
       const budgetRef = collection(db, 'users', user.uid, 'budgets');
       const now = new Date();
-      for (const cat of DEFAULT_CATEGORIES) {
+      const categories = formData.type === 'personal' ? PERSONAL_CATEGORIES : BUSINESS_CATEGORIES;
+
+      for (const cat of categories) {
         await addDoc(budgetRef, {
           ...cat,
           businessId: bizDoc.id,
@@ -81,6 +103,42 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
           createdAt: now.toISOString(),
           updatedAt: now.toISOString()
         });
+      }
+
+      // Initialize default transactions for the new business (Requested: current & past month)
+      const expenseRef = collection(db, 'users', user.uid, 'expenses');
+      
+      // Transaction 1: Current Month
+      await addDoc(expenseRef, {
+        amount: 85.50,
+        category: 'Business',
+        description: 'Monthly Software Subscription',
+        date: now.toISOString(),
+        notes: 'Initial setup transaction',
+        accountId: 'default',
+        businessId: bizDoc.id,
+        userId: user.uid,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      });
+
+      // Transaction 2: Past Month
+      const pastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+      await addDoc(expenseRef, {
+        amount: 450.00,
+        category: 'Business',
+        description: 'Office Consulting Fee',
+        date: pastMonth.toISOString(),
+        notes: 'Legacy cleanup record',
+        accountId: 'default',
+        businessId: bizDoc.id,
+        userId: user.uid,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      });
+      
+      if (onClose) {
+        onClose();
       }
     } catch (err) {
       console.error("Error creating business:", err);

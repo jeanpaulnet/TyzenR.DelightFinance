@@ -14,7 +14,7 @@ service cloud.firestore {
     // NOTE: This handles both the bootstrap admin and delegated admins.
     function isAdmin() { 
       return isSignedIn() && (
-        request.auth.token.email == "jeanpaulva@gmail.com" ||
+        request.auth.token.email.lower() == "jeanpaulva@gmail.com" ||
         (exists(/databases/$(database)/documents/users_config/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users_config/$(request.auth.uid)).data.role == "Admin")
       );
@@ -55,7 +55,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       
       allow create: if isSignedIn() && isValidUserConfig(incoming()) && (
-        // Admin can create any config
+        // Admin or Bootstrap Admin can create any config
         isAdmin() || 
         // User can create THEIR OWN config, but ONLY as a 'User' role
         (isOwner(docId) && incoming().role == 'User')
@@ -89,7 +89,7 @@ service cloud.firestore {
 
     match /users/{userId}/businesses/{businessId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidBusiness(incoming());
+      allow create: if isOwner(userId) && isValidId(businessId) && isValidBusiness(incoming());
       allow update: if isOwner(userId) && isValidBusiness(incoming()) && incoming().userId == existing().userId;
       allow delete: if isOwner(userId);
     }
@@ -131,7 +131,7 @@ service cloud.firestore {
 
     match /users/{userId}/budgets/{budgetId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidBudget(incoming());
+      allow create: if isOwner(userId) && isValidId(budgetId) && isValidBudget(incoming());
       allow update: if isOwner(userId) && isValidBudget(incoming()) && incoming().userId == existing().userId;
       allow delete: if isOwner(userId);
     }

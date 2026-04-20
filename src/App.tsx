@@ -111,8 +111,12 @@ function MainApp() {
                       AI-Powered Risk Analysis
                    </div>
                    <div className="flex items-center gap-3 text-sm font-medium text-slate-300">
-                      <PieChart size={18} className="text-[#86BC24]" />
-                      Unified Portfolio Tracking
+                      <Wallet size={18} className="text-[#86BC24]" />
+                      Manage budgets
+                   </div>
+                   <div className="flex items-center gap-3 text-sm font-medium text-slate-300">
+                      <TrendingUp size={18} className="text-[#86BC24]" />
+                      Improve savings
                    </div>
                 </div>
              </div>

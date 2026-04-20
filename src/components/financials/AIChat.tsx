@@ -30,7 +30,7 @@ export default function AIChat() {
     return finData.expenses.map(e => ({
       ...e,
       description: e.description || 'No Description',
-      notes: e.notes || ''
+      reference: e.reference || ''
     }));
   }, [finData.expenses]);
 

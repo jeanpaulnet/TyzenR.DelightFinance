@@ -61,7 +61,7 @@ export default function Transactions() {
     amount: '',
     category: '',
     description: '',
-    notes: ''
+    reference: ''
   });
 
   // Unique list of categories from all budgets to populate dropdown correctly
@@ -71,11 +71,20 @@ export default function Transactions() {
     return Array.from(cats).sort();
   }, [finData.budgets]);
 
+  // Map of category names to their types for color coding
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    finData.budgets.forEach(b => {
+      map.set(b.category.toLowerCase(), b.type || 'Expense');
+    });
+    return map;
+  }, [finData.budgets]);
+
   const processedExpenses = useMemo(() => {
     return finData.expenses.map(e => ({
       ...e,
       description: e.description || 'No Description',
-      notes: e.notes || ''
+      reference: e.reference || ''
     }));
   }, [finData.expenses]);
 
@@ -150,8 +159,8 @@ export default function Transactions() {
         amount: parseFloat(formData.amount),
         category: formData.category.trim(),
         date: new Date(formData.date).toISOString(),
-        description: formData.description,
-        notes: formData.notes,
+        description: formData.description || 'No Description',
+        reference: '',
         accountId: 'default',
         businessId: activeBusinessId,
         userId: user.uid,
@@ -186,8 +195,8 @@ export default function Transactions() {
         amount: parseFloat(formData.amount),
         category: formData.category.trim(),
         date: new Date(formData.date).toISOString(),
-        description: formData.description,
-        notes: formData.notes,
+        description: formData.description || 'No Description',
+        reference: formData.reference,
         updatedAt: new Date().toISOString()
       });
 
@@ -237,8 +246,8 @@ export default function Transactions() {
       date: exp.date.split('T')[0],
       amount: exp.amount.toString(),
       category: exp.category,
-      description: exp.description,
-      notes: exp.notes || ''
+      description: exp.description === 'No Description' ? '' : exp.description,
+      reference: exp.reference || ''
     });
     setIsEditing(true);
   };
@@ -249,7 +258,7 @@ export default function Transactions() {
       amount: '',
       category: '',
       description: '',
-      notes: ''
+      reference: ''
     });
   };
 
@@ -346,15 +355,29 @@ export default function Transactions() {
                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
                 >
                   <option value="">Select Category</option>
-                  {availableCategories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  {availableCategories.map(cat => {
+                    const type = categoryMap.get(cat.toLowerCase()) || 'Expense';
+                    let foreColor = '#DC2626'; // Expense (Red-600)
+                    if (type === 'Income') foreColor = '#16A34A'; // Green-600
+                    if (type === 'Asset') foreColor = '#2563EB'; // Blue-600
+                    if (type === 'Liability') foreColor = '#D97706'; // Amber/Orange-600
+
+                    return (
+                      <option 
+                        key={cat} 
+                        value={cat}
+                        style={{ color: foreColor, fontWeight: 'bold' }}
+                      >
+                        {cat} ({type})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Description</label>
                 <input 
-                   required value={formData.description}
+                  value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
                   placeholder="e.g. Amazon Office Supplies"
                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
@@ -406,9 +429,6 @@ export default function Transactions() {
                     <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-[#86BC24] transition-colors">
-                  Notes
-                </th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
@@ -424,7 +444,18 @@ export default function Transactions() {
                     <p className="text-sm font-bold text-slate-900 leading-tight">{exp.description}</p>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                    <span className={cn(
+                      "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-transparent",
+                      (() => {
+                        const type = categoryMap.get(exp.category.toLowerCase()) || 'Expense';
+                        switch (type) {
+                          case 'Income': return "text-green-600 border-green-200";
+                          case 'Asset': return "text-blue-600 border-blue-200";
+                          case 'Liability': return "text-amber-600 border-orange-200";
+                          default: return "text-red-600 border-red-200";
+                        }
+                      })()
+                    )}>
                       {exp.category}
                     </span>
                   </td>
@@ -432,11 +463,6 @@ export default function Transactions() {
                     <span className="text-sm font-bold text-slate-900">
                       {formatCurrency(exp.amount, currencyCode)}
                     </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <p className="text-[10px] text-slate-500 truncate max-w-[150px]" title={exp.notes || ''}>
-                      {exp.notes || '-'}
-                    </p>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end gap-1 group-hover:opacity-100 transition-opacity">
@@ -621,28 +647,43 @@ export default function Transactions() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
                   >
                     <option value="">Select Category</option>
-                    {availableCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
+                    {availableCategories.map(cat => {
+                      const type = categoryMap.get(cat.toLowerCase()) || 'Expense';
+                      let foreColor = '#DC2626'; 
+                      if (type === 'Income') foreColor = '#16A34A'; 
+                      if (type === 'Asset') foreColor = '#2563EB'; 
+                      if (type === 'Liability') foreColor = '#D97706';
+
+                      return (
+                        <option 
+                          key={cat} 
+                          value={cat}
+                          style={{ color: foreColor, fontWeight: 'bold' }}
+                        >
+                          {cat} ({type})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Description</label>
                   <input 
-                    required value={formData.description}
+                    value={formData.description}
                     onChange={e => setFormData({...formData, description: e.target.value})}
+                    placeholder="Enter description..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Notes</label>
-                  <textarea 
-                    value={formData.notes}
-                    onChange={e => setFormData({...formData, notes: e.target.value})}
-                    placeholder="Add additional context or details..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all min-h-[100px] resize-none"
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Reference</label>
+                  <input 
+                    value={formData.reference}
+                    onChange={e => setFormData({...formData, reference: e.target.value})}
+                    placeholder="Add reference number or ID..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
                   />
                 </div>
 

@@ -43,6 +43,15 @@ export default function Dashboard() {
     });
   }, [finData.expenses, dateFilter]);
 
+  // Map of category names to their types for color coding
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    finData.budgets.forEach(b => {
+      map.set(b.category.toLowerCase(), b.type || 'Expense');
+    });
+    return map;
+  }, [finData.budgets]);
+
   const summary = useMemo(() => {
     const currency = activeBusiness?.currency || 'USD';
     const totalSpent = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -204,13 +213,47 @@ export default function Dashboard() {
                           {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </span>
                         <span className="w-1 h-1 rounded-full bg-slate-300" />
-                        <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400">{tx.category}</span>
+                        <span className={cn(
+                          "text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded border bg-transparent",
+                          (() => {
+                            const type = categoryMap.get(tx.category.toLowerCase()) || 'Expense';
+                            switch (type) {
+                              case 'Income': return "text-green-600 border-green-200";
+                              case 'Asset': return "text-blue-600 border-blue-200";
+                              case 'Liability': return "text-amber-600 border-orange-200";
+                              default: return "text-red-600 border-red-200";
+                            }
+                          })()
+                        )}>
+                          {tx.category}
+                        </span>
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-slate-900">{formatCurrency(tx.amount, summary.currency)}</p>
-                    <p className="text-[9px] text-slate-400 font-mono mt-0.5 uppercase">{tx.type || 'Expense'}</p>
+                    <p className={cn(
+                      "text-sm font-bold",
+                      (() => {
+                        const type = categoryMap.get(tx.category.toLowerCase()) || 'Expense';
+                        return type === 'Income' ? "text-green-600" : "text-slate-900";
+                      })()
+                    )}>
+                      {formatCurrency(tx.amount, summary.currency)}
+                    </p>
+                    <p className={cn(
+                      "text-[9px] font-mono mt-0.5 uppercase font-bold",
+                      (() => {
+                        const type = categoryMap.get(tx.category.toLowerCase()) || 'Expense';
+                        switch (type) {
+                          case 'Income': return "text-green-500";
+                          case 'Asset': return "text-blue-500";
+                          case 'Liability': return "text-amber-500";
+                          default: return "text-red-500";
+                        }
+                      })()
+                    )}>
+                      {categoryMap.get(tx.category.toLowerCase()) || 'Expense'}
+                    </p>
                   </div>
                 </div>
               ))

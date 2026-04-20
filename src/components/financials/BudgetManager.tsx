@@ -3,7 +3,7 @@ import { useApp } from '../../AppContext';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { logEvent } from '../../lib/audit';
-import { Wallet, Plus, Trash2, Edit2, Check, X, Target, Info, Activity, ChevronLeft, ChevronRight, Copy, Loader2 } from 'lucide-react';
+import { Wallet, Plus, Trash2, Edit2, Check, X, Target, Info, Activity, ChevronLeft, ChevronRight, Copy, Loader2, TrendingUp, Receipt, Building2, ShieldAlert } from 'lucide-react';
 import { formatCurrency, getCurrencySymbol, cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -372,30 +372,38 @@ export default function BudgetManager() {
             />
           </div>
           <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target Budget</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
-                {getCurrencySymbol(currencyCode)}
-              </span>
-              <input 
-                type="number" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value)})}
-                placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</label>
             <select 
               value={newBudget.type} 
               onChange={e => setNewBudget({...newBudget, type: e.target.value})}
-              className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm"
+              className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-bold"
+              style={{ 
+                color: 
+                  newBudget.type === 'Income' ? '#16A34A' : 
+                  newBudget.type === 'Asset' ? '#2563EB' : 
+                  newBudget.type === 'Liability' ? '#D97706' : '#DC2626' 
+              }}
             >
-              <option value="Income">Income</option>
-              <option value="Expense">Expense</option>
-              <option value="Asset">Asset</option>
-              <option value="Liability">Liability</option>
+              <option value="Income" style={{ color: '#16A34A' }}>Income</option>
+              <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
+              <option value="Asset" style={{ color: '#2563EB' }}>Asset</option>
+              <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
             </select>
           </div>
+          {newBudget.type === 'Expense' && (
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target Budget</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
+                  {getCurrencySymbol(currencyCode)}
+                </span>
+                <input 
+                  type="number" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value)})}
+                  placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
+                />
+              </div>
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <button type="submit" className="flex-1 btn-primary py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
               Create
@@ -436,25 +444,33 @@ export default function BudgetManager() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Amount</label>
-                    <input 
-                      type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
-                      className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
-                    />
-                  </div>
-                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Type</label>
                     <select 
                       value={editBudget.type} 
                       onChange={e => setEditBudget({...editBudget, type: e.target.value})}
-                      className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24]"
+                      className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24] font-bold"
+                      style={{ 
+                        color: 
+                          editBudget.type === 'Income' ? '#16A34A' : 
+                          editBudget.type === 'Asset' ? '#2563EB' : 
+                          editBudget.type === 'Liability' ? '#D97706' : '#DC2626' 
+                      }}
                     >
-                      <option value="Income">Income</option>
-                      <option value="Expense">Expense</option>
-                      <option value="Asset">Asset</option>
-                      <option value="Liability">Liability</option>
+                      <option value="Income" style={{ color: '#16A34A' }}>Income</option>
+                      <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
+                      <option value="Asset" style={{ color: '#2563EB' }}>Asset</option>
+                      <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
                     </select>
                   </div>
+                  {editBudget.type === 'Expense' && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Amount</label>
+                      <input 
+                        type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
+                        className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
+                      />
+                    </div>
+                  )}
                 </div>
                 {duplicateError && (
                   <motion.p 
@@ -505,22 +521,35 @@ export default function BudgetManager() {
                 </div>
                 <div className="flex items-center gap-3 mb-4">
                    <div className={cn(
-                     "w-8 h-8 rounded bg-[#F8FAFC] border flex items-center justify-center",
-                     stat.isActive ? "text-[#86BC24] border-[#E2E8F0]" : "text-slate-300 border-slate-200"
+                     "w-8 h-8 rounded bg-[#F8FAFC] border flex items-center justify-center transition-colors",
+                     stat.isActive ? (
+                       stat.data.type === 'Income' ? "text-green-600 border-green-100 bg-green-50/50" :
+                       stat.data.type === 'Asset' ? "text-blue-600 border-blue-100 bg-blue-50/50" :
+                       stat.data.type === 'Liability' ? "text-amber-600 border-orange-100 bg-orange-50/50" :
+                       "text-[#86BC24] border-[#E2E8F0] bg-slate-50/50"
+                     ) : "text-slate-300 border-slate-200"
                    )}>
-                      <Target size={18} />
+                      {(() => {
+                        if (!stat.isActive) return <Target size={18} />;
+                        switch(stat.data.type) {
+                          case 'Income': return <TrendingUp size={18} />;
+                          case 'Asset': return <Building2 size={18} />;
+                          case 'Liability': return <ShieldAlert size={18} />;
+                          default: return <Receipt size={18} />;
+                        }
+                      })()}
                    </div>
                    <div className="flex-1">
                       <p className="text-lg font-bold text-[#1E293B] tracking-tight leading-none">{stat.name}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className={cn(
-                          "text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border leading-none",
+                          "text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border leading-none bg-transparent",
                           stat.isActive ? (
-                            stat.data.type === 'Income' ? "bg-green-50 text-green-600 border-green-100" :
-                            stat.data.type === 'Asset' ? "bg-blue-50 text-blue-600 border-blue-100" :
-                            stat.data.type === 'Liability' ? "bg-amber-50 text-amber-600 border-amber-100" :
-                            "bg-slate-50 text-slate-500 border-slate-100"
-                          ) : "bg-slate-50/50 text-slate-300 border-slate-100"
+                            stat.data.type === 'Income' ? "text-green-600 border-green-200" :
+                            stat.data.type === 'Asset' ? "text-blue-600 border-blue-200" :
+                            stat.data.type === 'Liability' ? "text-amber-600 border-orange-200" :
+                            "text-red-600 border-red-200"
+                          ) : "text-slate-300 border-slate-100"
                         )}>
                           {stat.isActive ? (stat.data.type || 'Expense') : 'General'}
                         </span>
@@ -528,16 +557,22 @@ export default function BudgetManager() {
                    </div>
                 </div>
                 
-                {stat.isActive ? (
-                  <div className="bg-slate-50 rounded p-3 mb-4">
+                {stat.isActive && stat.data.type === 'Expense' ? (
+                  <div className="bg-slate-50/80 rounded p-3 mb-4">
                      <div className="flex justify-between items-center text-[10px] font-bold text-[#64748B] uppercase tracking-widest mb-1">
-                        <span>Monthly {stat.data.type || 'Budget'}</span>
+                        <span>Monthly Budget</span>
                         <span className="text-[#86BC24] font-mono">{formatCurrency(stat.data.amount, currencyCode)}</span>
                      </div>
                      <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
                         <div className="w-3/4 h-full bg-[#86BC24]"></div>
                      </div>
                   </div>
+                ) : (stat.isActive && stat.data.type === 'Income') ? (
+                  <div className="flex-1 flex flex-col justify-center mb-4 italic text-[11px] text-slate-400">
+                    No target amount for Income
+                  </div>
+                ) : stat.isActive ? (
+                  <div className="flex-1 mb-4" />
                 ) : (
                   <div className="flex-1 flex flex-col justify-end">
                     <button 
