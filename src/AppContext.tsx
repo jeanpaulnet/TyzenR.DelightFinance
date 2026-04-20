@@ -17,6 +17,8 @@ export interface Business {
   type: 'personal' | 'business';
   currency: string;
   timezone: string;
+  fiscalYearStart?: string;
+  fiscalYearEnd?: string;
   userId: string;
   createdAt: string;
   updatedAt: string;

@@ -6,6 +6,8 @@ import {
   ArrowUpRight, 
   ArrowDownRight,
   Activity,
+  Clock,
+  ArrowRight
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -15,7 +17,7 @@ import {
 import { VarianceTrendChart, PortfolioPieChart } from '../ui/FinancialCharts';
 
 export default function Dashboard() {
-  const { finData, user, dateFilter, activeBusinessId, businesses } = useApp();
+  const { finData, user, dateFilter, activeBusinessId, businesses, setActiveTab } = useApp();
   const [chartType, setChartType] = useState<'bars' | 'lines'>('bars');
 
   const activeBusiness = useMemo(() => 
@@ -103,7 +105,11 @@ export default function Dashboard() {
       };
     });
 
-    return { totalSpent, totalBudget, investmentValue, chartData, varianceData, lineChartData, periodData, currency };
+    const recentTransactions = [...filteredExpenses]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5);
+
+    return { totalSpent, totalBudget, investmentValue, chartData, varianceData, lineChartData, periodData, currency, recentTransactions };
   }, [filteredExpenses, finData.budgets, finData.investments, activeBusiness]);
 
   return (
@@ -164,6 +170,55 @@ export default function Dashboard() {
                type={chartType} 
                currencyCode={summary.currency}
              />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
+        <div className="dashboard-card shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <p className="stat-label m-0 text-slate-900">Recent Transactions</p>
+              <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Latest activity in this period</p>
+            </div>
+            <button 
+              onClick={() => setActiveTab('transactions')}
+              className="group flex items-center gap-1.5 text-[10px] font-bold text-[#86BC24] uppercase tracking-widest hover:text-[#75A51F] transition-colors"
+            >
+              View All <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
+          
+          <div className="divide-y divide-slate-100">
+            {summary.recentTransactions.length > 0 ? (
+              summary.recentTransactions.map((tx) => (
+                <div key={tx.id} className="py-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors px-2 rounded-lg -mx-2">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
+                      <Clock size={16} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 truncate max-w-[200px] md:max-w-md">{tx.description || 'No Description'}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                        <span className="w-1 h-1 rounded-full bg-slate-300" />
+                        <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400">{tx.category}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-slate-900">{formatCurrency(tx.amount, summary.currency)}</p>
+                    <p className="text-[9px] text-slate-400 font-mono mt-0.5 uppercase">{tx.type || 'Expense'}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-12 text-center">
+                <p className="text-sm text-slate-400 font-medium italic">No transactions found for this period</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

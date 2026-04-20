@@ -439,17 +439,17 @@ export default function Transactions() {
                     </p>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="flex justify-end gap-1 transition-opacity">
+                    <div className="flex justify-end gap-1 group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={() => startEdit(exp)}
-                        className="p-1.5 text-slate-400 hover:text-[#86BC24] hover:bg-green-50 rounded transition-colors"
+                        className="p-1.5 text-slate-300 hover:text-[#86BC24] hover:bg-green-50 rounded-lg transition-all"
                         title="Edit"
                       >
                         <Edit2 size={14} />
                       </button>
                       <button 
                         onClick={() => { setDeletingId(exp.id); setDeletingDescription(exp.description); }}
-                        className="p-1.5 text-slate-400 hover:text-[#EF4444] hover:bg-red-50 rounded transition-colors"
+                        className="p-1.5 text-slate-300 hover:text-[#EF4444] hover:bg-red-50 rounded-lg transition-all"
                         title="Delete"
                       >
                         <Trash2 size={14} />

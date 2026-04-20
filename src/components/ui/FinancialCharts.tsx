@@ -64,7 +64,7 @@ export const VarianceTrendChart: React.FC<VarianceChartProps> = ({ data, height 
             <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
             <Line type="monotone" dataKey="budget" stroke="#4B5563" name="Budget" strokeWidth={2} dot={false} strokeDasharray="5 5" />
             <Line type="monotone" dataKey="actual" stroke="#86BC24" name="Actual" strokeWidth={3} dot={{ fill: '#86BC24', r: 4 }} activeDot={{ r: 6 }} />
-            <Line type="monotone" dataKey="forecast" stroke="#F0F8FF" name="Forecast" strokeWidth={2} dot={false} strokeDasharray="3 3" />
+            <Line type="monotone" dataKey="forecast" stroke="aliceblue" name="Forecast" strokeWidth={2} dot={false} strokeDasharray="3 3" />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -96,7 +96,7 @@ export const VarianceTrendChart: React.FC<VarianceChartProps> = ({ data, height 
           <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
           <Bar dataKey="budget" fill="#4B5563" name="Budget" radius={[4, 4, 0, 0]} />
           <Bar dataKey="actual" fill="#86BC24" name="Actual" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="forecast" fill="#F0F8FF" name="Forecast" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="forecast" fill="aliceblue" name="Forecast" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

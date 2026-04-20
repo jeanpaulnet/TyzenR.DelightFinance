@@ -12,6 +12,11 @@ const CURRENCIES = [
   { code: 'JPY', name: 'Japanese Yen' },
 ];
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 const TIMEZONES = [
   'UTC',
   'America/New_York',
@@ -29,6 +34,8 @@ export default function BusinessSettings() {
     type: 'personal' | 'business';
     currency: string;
     timezone: string;
+    fiscalYearStart: string;
+    fiscalYearEnd: string;
   } | null>(null);
 
   const activeBiz = businesses.find(b => b.id === activeBusinessId);
@@ -40,6 +47,8 @@ export default function BusinessSettings() {
         type: activeBiz.type,
         currency: activeBiz.currency,
         timezone: activeBiz.timezone,
+        fiscalYearStart: activeBiz.fiscalYearStart || '01-01',
+        fiscalYearEnd: activeBiz.fiscalYearEnd || '12-31',
       });
     }
   }, [activeBiz]);
@@ -144,6 +153,71 @@ export default function BusinessSettings() {
                     </div>
                     <span className="text-sm font-bold text-slate-900">Business Finance</span>
                   </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Clock size={12} /> Accounting Year Start
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select 
+                      value={formData.fiscalYearStart.split('-')[0]}
+                      onChange={e => {
+                        const [m, d] = formData.fiscalYearStart.split('-');
+                        setFormData({...formData, fiscalYearStart: `${e.target.value}-${d}`});
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                    >
+                      {MONTHS.map((m, i) => (
+                        <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>
+                      ))}
+                    </select>
+                    <select 
+                      value={formData.fiscalYearStart.split('-')[1]}
+                      onChange={e => {
+                        const [m, d] = formData.fiscalYearStart.split('-');
+                        setFormData({...formData, fiscalYearStart: `${m}-${e.target.value.padStart(2, '0')}`});
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <option key={i + 1} value={String(i + 1).padStart(2, '0')}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Clock size={12} /> Accounting Year End
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select 
+                      value={formData.fiscalYearEnd.split('-')[0]}
+                      onChange={e => {
+                        const [m, d] = formData.fiscalYearEnd.split('-');
+                        setFormData({...formData, fiscalYearEnd: `${e.target.value}-${d}`});
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                    >
+                      {MONTHS.map((m, i) => (
+                        <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>
+                      ))}
+                    </select>
+                    <select 
+                      value={formData.fiscalYearEnd.split('-')[1]}
+                      onChange={e => {
+                        const [m, d] = formData.fiscalYearEnd.split('-');
+                        setFormData({...formData, fiscalYearEnd: `${m}-${e.target.value.padStart(2, '0')}`});
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <option key={i + 1} value={String(i + 1).padStart(2, '0')}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 

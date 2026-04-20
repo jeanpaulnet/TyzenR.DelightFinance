@@ -158,7 +158,7 @@ export default function InvestmentTracker() {
                     <td className="py-4 text-right">
                       <button 
                         onClick={() => handleDelete(inv.id)}
-                        className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                        className="p-2 text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                       >
                         <Trash2 size={16} />
                       </button>

@@ -23,6 +23,7 @@
       "properties": {
         "category": { "type": "string" },
         "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["Income", "Expense", "Asset", "Liability"] },
         "month": { "type": "number" },
         "year": { "type": "number" },
         "userId": { "type": "string" },
@@ -59,6 +60,23 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["symbol", "quantity", "purchasePrice", "assetClass", "userId", "createdAt"]
+    },
+    "Business": {
+      "title": "Business",
+      "description": "A business or personal finance entity representing an accounting boundary.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["personal", "business"] },
+        "currency": { "type": "string" },
+        "timezone": { "type": "string" },
+        "fiscalYearStart": { "type": "string", "description": "Accounting year start day and month (MM-DD format, e.g., 01-01)" },
+        "fiscalYearEnd": { "type": "string", "description": "Accounting year end day and month (MM-DD format, e.g., 12-31)" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "currency", "timezone", "userId", "createdAt"]
     },
     "UserConfig": {
       "title": "User Config",
@@ -109,6 +127,10 @@
     "users_config/{userId}": {
       "schema": "UserConfig",
       "description": "Configuration and permissions for users."
+    },
+    "users/{userId}/businesses/{businessId}": {
+      "schema": "Business",
+      "description": "User's business entities."
     },
     "users/{userId}/expenses/{expenseId}": {
       "schema": "Expense",

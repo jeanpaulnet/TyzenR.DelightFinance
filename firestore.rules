@@ -15,7 +15,8 @@ service cloud.firestore {
     function isAdmin() { 
       return isSignedIn() && (
         request.auth.token.email == "jeanpaulva@gmail.com" ||
-        get(/databases/$(database)/documents/users_config/$(request.auth.uid)).data.role == "Admin"
+        (exists(/databases/$(database)/documents/users_config/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users_config/$(request.auth.uid)).data.role == "Admin")
       );
     }
     
@@ -43,11 +44,6 @@ service cloud.firestore {
         && data.role in ['Admin', 'User']
         && data.menuAccess is map
         && data.menuAccess.keys().hasAll(['dashboard', 'transactions', 'budgets', 'ai'])
-        && data.menuAccess.keys().size() == 4
-        && data.menuAccess.dashboard is bool
-        && data.menuAccess.transactions is bool
-        && data.menuAccess.budgets is bool
-        && data.menuAccess.ai is bool
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
@@ -62,7 +58,7 @@ service cloud.firestore {
         // Admin can create any config
         isAdmin() || 
         // User can create THEIR OWN config, but ONLY as a 'User' role
-        (isOwner(docId) && incoming().role == 'User' && incoming().menuAccess.users == false)
+        (isOwner(docId) && incoming().role == 'User')
       );
       
       allow update: if isSignedIn() && (
@@ -85,13 +81,15 @@ service cloud.firestore {
         && data.currency is string && data.currency.size() <= 10
         && data.timezone is string && data.timezone.size() <= 100
         && data.userId == request.auth.uid
+        && (data.get('fiscalYearStart', null) == null || (data.fiscalYearStart is string && data.fiscalYearStart.size() <= 50))
+        && (data.get('fiscalYearEnd', null) == null || (data.fiscalYearEnd is string && data.fiscalYearEnd.size() <= 50))
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
 
     match /users/{userId}/businesses/{businessId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidId(businessId) && isValidBusiness(incoming());
+      allow create: if isOwner(userId) && isValidBusiness(incoming());
       allow update: if isOwner(userId) && isValidBusiness(incoming()) && incoming().userId == existing().userId;
       allow delete: if isOwner(userId);
     }
@@ -113,7 +111,7 @@ service cloud.firestore {
 
     match /users/{userId}/expenses/{expenseId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidId(expenseId) && isValidExpense(incoming());
+      allow create: if isOwner(userId) && isValidExpense(incoming());
       allow update: if isOwner(userId) && isValidExpense(incoming()) && incoming().userId == existing().userId;
       allow delete: if isOwner(userId);
     }
@@ -122,6 +120,7 @@ service cloud.firestore {
     function isValidBudget(data) {
       return data.category is string && data.category.size() <= 100
         && data.amount is number
+        && data.type in ['Income', 'Expense', 'Asset', 'Liability']
         && data.month is number && data.month >= 1 && data.month <= 12
         && data.year is number
         && data.businessId is string && data.businessId.size() <= 100
@@ -132,7 +131,7 @@ service cloud.firestore {
 
     match /users/{userId}/budgets/{budgetId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidId(budgetId) && isValidBudget(incoming());
+      allow create: if isOwner(userId) && isValidBudget(incoming());
       allow update: if isOwner(userId) && isValidBudget(incoming()) && incoming().userId == existing().userId;
       allow delete: if isOwner(userId);
     }

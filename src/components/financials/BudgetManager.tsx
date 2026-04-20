@@ -13,14 +13,15 @@ export default function BudgetManager() {
   const currencyCode = activeBusiness?.currency || 'USD';
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [newBudget, setNewBudget] = useState({ category: '', amount: 0 });
+  const [newBudget, setNewBudget] = useState({ category: '', amount: 0, type: 'Expense' });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editBudget, setEditBudget] = useState({ category: '', amount: 0 });
+  const [editBudget, setEditBudget] = useState({ category: '', amount: 0, type: 'Expense' });
   const [isAdding, setIsAdding] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string | null, category: string, isActive: boolean } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [transactionAction, setTransactionAction] = useState<'keep' | 'delete' | 'reassign'>('keep');
+  const [transactionAction, setTransactionAction] = useState<'delete' | 'reassign'>('reassign');
   const [targetCategory, setTargetCategory] = useState('');
 
   useEffect(() => {
@@ -78,12 +79,13 @@ export default function BudgetManager() {
     return Math.max(...finData.budgets.map(b => b.year));
   }, [finData.budgets]);
 
-  const handleCreateForYear = async (category: string, amount: number) => {
+  const handleCreateForYear = async (category: string, amount: number, type: string = 'Expense') => {
     if (!user || !activeBusinessId) return;
     try {
       const budgetDoc = await addDoc(collection(db, 'users', user.uid, 'budgets'), {
         category,
         amount,
+        type,
         month: selectedYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 1,
         year: selectedYear,
         businessId: activeBusinessId,
@@ -125,6 +127,7 @@ export default function BudgetManager() {
         batch.push(addDoc(collection(db, 'users', user.uid, 'budgets'), {
           category: b.category,
           amount: b.amount,
+          type: b.type || 'Expense',
           month: 1, // Start of year
           year: selectedYear,
           businessId: activeBusinessId,
@@ -153,10 +156,20 @@ export default function BudgetManager() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !activeBusinessId) return;
+    
+    // Check for duplicate
+    const isDuplicate = allCategories.some(c => c.toLowerCase() === newBudget.category.trim().toLowerCase());
+    if (isDuplicate) {
+      setDuplicateError(`Category "${newBudget.category}" already exists.`);
+      return;
+    }
+    setDuplicateError(null);
+
     try {
       const budgetDoc = await addDoc(collection(db, 'users', user.uid, 'budgets'), {
         category: newBudget.category,
         amount: newBudget.amount,
+        type: newBudget.type,
         month: selectedYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 1,
         year: selectedYear,
         businessId: activeBusinessId,
@@ -173,10 +186,10 @@ export default function BudgetManager() {
         resourceType: 'budget',
         resourceId: budgetDoc.id,
         resourceName: newBudget.category,
-        details: `Created budget for ${newBudget.category} with target ${formatCurrency(newBudget.amount, currencyCode)}`
+        details: `Created ${newBudget.type} budget for ${newBudget.category} with target ${formatCurrency(newBudget.amount, currencyCode)}`
       });
 
-      setNewBudget({ category: '', amount: 0 });
+      setNewBudget({ category: '', amount: 0, type: 'Expense' });
       setIsAdding(false);
     } catch (err) {
       console.error(err);
@@ -186,10 +199,23 @@ export default function BudgetManager() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !editingId) return;
+
+    // Check for duplicate (if name changed)
+    const originalBudget = finData.budgets.find(b => b.id === editingId);
+    if (originalBudget && originalBudget.category.toLowerCase() !== editBudget.category.toLowerCase()) {
+      const isDuplicate = allCategories.some(c => c.toLowerCase() === editBudget.category.trim().toLowerCase());
+      if (isDuplicate) {
+        setDuplicateError(`Category "${editBudget.category}" already exists.`);
+        return;
+      }
+    }
+    setDuplicateError(null);
+
     try {
       await updateDoc(doc(db, 'users', user.uid, 'budgets', editingId), {
         category: editBudget.category,
         amount: editBudget.amount,
+        type: editBudget.type,
         updatedAt: new Date().toISOString()
       });
 
@@ -264,7 +290,7 @@ export default function BudgetManager() {
       });
       
       setDeleteConfirm(null);
-      setTransactionAction('keep');
+      setTransactionAction('reassign');
       setTargetCategory('');
     } catch (err) {
       console.error(err);
@@ -275,7 +301,12 @@ export default function BudgetManager() {
 
   const startEdit = (b: any) => {
     setEditingId(b.id);
-    setEditBudget({ category: b.category, amount: b.amount });
+    setEditBudget({
+      category: b.category,
+      amount: b.amount,
+      type: b.type || 'Expense'
+    });
+    setDuplicateError(null);
   };
 
   return (
@@ -310,7 +341,13 @@ export default function BudgetManager() {
         </div>
 
         {!isAdding && (
-          <button onClick={() => setIsAdding(true)} className="btn-primary flex items-center gap-2 h-10 px-4">
+          <button 
+            onClick={() => {
+              setIsAdding(true);
+              setDuplicateError(null);
+            }} 
+            className="btn-primary flex items-center gap-2 h-10 px-4"
+          >
             <Plus size={18} />
             Add Category
           </button>
@@ -322,13 +359,16 @@ export default function BudgetManager() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleAdd} 
-          className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 shadow-sm max-w-2xl grid grid-cols-1 md:grid-cols-3 gap-6"
+          className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 shadow-sm max-w-4xl grid grid-cols-1 md:grid-cols-4 gap-6"
         >
           <div className="space-y-2">
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Name</label>
             <input 
-              value={newBudget.category} onChange={e => setNewBudget({...newBudget, category: e.target.value})}
-              placeholder="e.g. Travel" required className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
+              value={newBudget.category} onChange={e => {
+                setNewBudget({...newBudget, category: e.target.value});
+                setDuplicateError(null);
+              }}
+              placeholder="e.g. Travel" required className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm"
             />
           </div>
           <div className="space-y-2">
@@ -339,9 +379,22 @@ export default function BudgetManager() {
               </span>
               <input 
                 type="number" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value)})}
-                placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm font-mono"
+                placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</label>
+            <select 
+              value={newBudget.type} 
+              onChange={e => setNewBudget({...newBudget, type: e.target.value})}
+              className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm"
+            >
+              <option value="Income">Income</option>
+              <option value="Expense">Expense</option>
+              <option value="Asset">Asset</option>
+              <option value="Liability">Liability</option>
+            </select>
           </div>
           <div className="flex items-end gap-2">
             <button type="submit" className="flex-1 btn-primary py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
@@ -351,6 +404,15 @@ export default function BudgetManager() {
               <X size={18} />
             </button>
           </div>
+          {duplicateError && (
+            <motion.p 
+              initial={{ opacity: 0, y: -5 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="mt-2 text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1"
+            >
+              {duplicateError}
+            </motion.p>
+          )}
         </motion.form>
       )}
 
@@ -365,17 +427,44 @@ export default function BudgetManager() {
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Editing Name</label>
                   <input 
-                    value={editBudget.category} onChange={e => setEditBudget({...editBudget, category: e.target.value})}
+                    value={editBudget.category} onChange={e => {
+                      setEditBudget({...editBudget, category: e.target.value});
+                      setDuplicateError(null);
+                    }}
                     className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24]"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Editing Budget</label>
-                  <input 
-                    type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
-                    className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Amount</label>
+                    <input 
+                      type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
+                      className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Type</label>
+                    <select 
+                      value={editBudget.type} 
+                      onChange={e => setEditBudget({...editBudget, type: e.target.value})}
+                      className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24]"
+                    >
+                      <option value="Income">Income</option>
+                      <option value="Expense">Expense</option>
+                      <option value="Asset">Asset</option>
+                      <option value="Liability">Liability</option>
+                    </select>
+                  </div>
                 </div>
+                {duplicateError && (
+                  <motion.p 
+                    initial={{ opacity: 0, x: -10 }} 
+                    animate={{ opacity: 1, x: 0 }} 
+                    className="text-[10px] font-bold text-red-500 uppercase tracking-wider"
+                  >
+                    {duplicateError}
+                  </motion.p>
+                )}
                 <div className="flex gap-2">
                   <button type="submit" className="flex-1 bg-[#86BC24] text-white py-1.5 rounded-md text-xs font-bold uppercase tracking-widest hover:bg-[#75A51F]">Save</button>
                   <button type="button" onClick={() => setEditingId(null)} className="flex-1 bg-slate-100 text-slate-500 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest hover:bg-slate-200">Cancel</button>
@@ -383,15 +472,20 @@ export default function BudgetManager() {
               </form>
             ) : (
               <>
-                <div className="absolute top-0 right-0 p-2 flex gap-1">
+                <div className="absolute top-0 right-0 p-2 flex gap-1 transition-opacity">
                     {stat.isActive ? (
                       <>
-                        <button onClick={() => startEdit(stat.data)} className="p-1 text-slate-400 hover:text-[#86BC24] transition-colors">
+                        <button 
+                          onClick={() => startEdit(stat.data)} 
+                          className="p-1 text-slate-300 hover:text-[#86BC24] hover:bg-green-50 rounded transition-all"
+                          title="Edit Category"
+                        >
                             <Edit2 size={14} />
                         </button>
                         <button 
                           onClick={() => setDeleteConfirm({ id: stat.data.id, category: stat.name, isActive: true })} 
-                          className="p-1 text-slate-400 hover:text-[#EF4444] transition-colors"
+                          className="p-1 text-slate-300 hover:text-[#EF4444] hover:bg-red-50 rounded transition-all"
+                          title="Delete Category"
                         >
                             <Trash2 size={14} />
                         </button>
@@ -400,7 +494,7 @@ export default function BudgetManager() {
                       <div className="flex gap-2 items-center">
                         <button 
                           onClick={() => setDeleteConfirm({ id: null, category: stat.name, isActive: false })}
-                          className="p-1 text-slate-300 hover:text-[#EF4444] transition-colors"
+                          className="p-1 text-slate-300 hover:text-[#EF4444] hover:bg-red-50 rounded transition-all"
                           title="Purge Category"
                         >
                           <Trash2 size={12} />
@@ -416,15 +510,28 @@ export default function BudgetManager() {
                    )}>
                       <Target size={18} />
                    </div>
-                   <div>
+                   <div className="flex-1">
                       <p className="text-lg font-bold text-[#1E293B] tracking-tight leading-none">{stat.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={cn(
+                          "text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border leading-none",
+                          stat.isActive ? (
+                            stat.data.type === 'Income' ? "bg-green-50 text-green-600 border-green-100" :
+                            stat.data.type === 'Asset' ? "bg-blue-50 text-blue-600 border-blue-100" :
+                            stat.data.type === 'Liability' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                            "bg-slate-50 text-slate-500 border-slate-100"
+                          ) : "bg-slate-50/50 text-slate-300 border-slate-100"
+                        )}>
+                          {stat.isActive ? (stat.data.type || 'Expense') : 'General'}
+                        </span>
+                      </div>
                    </div>
                 </div>
                 
                 {stat.isActive ? (
                   <div className="bg-slate-50 rounded p-3 mb-4">
                      <div className="flex justify-between items-center text-[10px] font-bold text-[#64748B] uppercase tracking-widest mb-1">
-                        <span>Monthly Budget</span>
+                        <span>Monthly {stat.data.type || 'Budget'}</span>
                         <span className="text-[#86BC24] font-mono">{formatCurrency(stat.data.amount, currencyCode)}</span>
                      </div>
                      <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
@@ -434,11 +541,11 @@ export default function BudgetManager() {
                 ) : (
                   <div className="flex-1 flex flex-col justify-end">
                     <button 
-                      onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount)}
+                      onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount, stat.data.type || 'Expense')}
                       className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-[#86BC24] hover:text-[#86BC24] transition-all flex items-center justify-center gap-2 group/btn"
                     >
                       <Plus size={12} className="group-hover/btn:scale-125 transition-transform" />
-                      Set budget {stat.fallbackAmount > 0 ? `(${formatCurrency(stat.fallbackAmount, currencyCode)})` : ""}
+                      Set as {stat.data.type || 'Expense'} {stat.fallbackAmount > 0 ? `(${formatCurrency(stat.fallbackAmount, currencyCode)})` : ""}
                     </button>
                   </div>
                 )}
@@ -481,7 +588,7 @@ export default function BudgetManager() {
                   {deleteConfirm.isActive && (
                     <button 
                       onClick={() => {
-                        setTransactionAction('keep');
+                        setTransactionAction('reassign');
                         handleDelete('year');
                       }}
                       disabled={isDeleting}
@@ -496,20 +603,6 @@ export default function BudgetManager() {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Transactions Strategy</p>
                     
                     <div className="space-y-2">
-                      <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-slate-300 transition-colors">
-                        <input 
-                          type="radio" 
-                          name="txAction" 
-                          checked={transactionAction === 'keep'} 
-                          onChange={() => setTransactionAction('keep')}
-                          className="w-4 h-4 text-[#86BC24] focus:ring-[#86BC24]"
-                        />
-                        <div className="text-xs">
-                          <p className="font-bold text-slate-700">Keep Transactions</p>
-                          <p className="text-slate-500 text-[10px]">Expenses will remain under this category name</p>
-                        </div>
-                      </label>
-
                       <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-slate-300 transition-colors">
                         <input 
                           type="radio" 
@@ -563,7 +656,7 @@ export default function BudgetManager() {
                   <button 
                     onClick={() => {
                       setDeleteConfirm(null);
-                      setTransactionAction('keep');
+                      setTransactionAction('reassign');
                       setTargetCategory('');
                     }}
                     disabled={isDeleting}
