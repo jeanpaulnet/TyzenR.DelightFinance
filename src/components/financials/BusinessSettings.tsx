@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../../AppContext';
+import { useApp, getBusinessSettings } from '../../AppContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Building2, Coins, Clock, Trash2, Save, AlertTriangle, Loader2 } from 'lucide-react';
+import { Building2, Coins, Clock, Trash2, Save, AlertTriangle, Loader2, CheckCircle2, HelpCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const CURRENCIES = [
@@ -26,29 +26,34 @@ const TIMEZONES = [
 ];
 
 export default function BusinessSettings() {
-  const { businesses, activeBusinessId, updateBusiness, deleteBusiness, setActiveTab } = useApp();
+  const { businesses, activeBusinessId, updateBusiness, deleteBusiness, setActiveTab, finData } = useApp();
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState<{
     name: string;
-    type: 'personal' | 'business';
     currency: string;
     timezone: string;
     fiscalYearStart: string;
     fiscalYearEnd: string;
+    isBudgetingEnabled: boolean;
+    isGSTEnabled: boolean;
+    isDefault: boolean;
   } | null>(null);
 
   const activeBiz = businesses.find(b => b.id === activeBusinessId);
 
   useEffect(() => {
     if (activeBiz) {
+      const settings = getBusinessSettings(activeBiz);
       setFormData({
         name: activeBiz.name,
-        type: activeBiz.type,
-        currency: activeBiz.currency,
-        timezone: activeBiz.timezone,
-        fiscalYearStart: activeBiz.fiscalYearStart || '01-01',
-        fiscalYearEnd: activeBiz.fiscalYearEnd || '12-31',
+        currency: settings.currency,
+        timezone: settings.timezone,
+        fiscalYearStart: settings.fiscalYearStart || '01-01',
+        fiscalYearEnd: settings.fiscalYearEnd || '12-31',
+        isBudgetingEnabled: settings.isBudgetingEnabled ?? true,
+        isGSTEnabled: settings.isGSTEnabled ?? false,
+        isDefault: activeBiz.isDefault ?? false,
       });
     }
   }, [activeBiz]);
@@ -60,7 +65,21 @@ export default function BusinessSettings() {
     if (loading) return;
     setLoading(true);
     try {
-      await updateBusiness(activeBiz.id, formData);
+      const { name, isDefault, ...settings } = formData;
+      
+      // If setting this as default, unset others first (Logic: Client-side sequential batching)
+      if (isDefault) {
+        const others = businesses.filter(b => b.id !== activeBiz.id && b.isDefault);
+        for (const other of others) {
+           await updateBusiness(other.id, { isDefault: false });
+        }
+      }
+
+      await updateBusiness(activeBiz.id, {
+        name,
+        isDefault,
+        settingsJson: JSON.stringify(settings)
+      });
       setActiveTab('dashboard'); // Switch to dashboard tab after save
     } catch (err) {
       console.error(err);
@@ -113,46 +132,53 @@ export default function BusinessSettings() {
                 />
               </div>
 
-              <div className="space-y-3">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Profile Type</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <label className={cn(
-                    "flex items-center gap-3 p-4 border rounded-2xl cursor-pointer transition-all",
-                    formData.type === 'personal' ? "border-[#86BC24] bg-[#86BC24]/5" : "border-slate-100 hover:border-slate-200"
-                  )}>
+              <div className="space-y-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Feature Configuration</label>
+                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <label className="flex items-center gap-3 cursor-pointer group">
                     <input 
-                      type="radio" 
-                      className="sr-only"
-                      checked={formData.type === 'personal'}
-                      onChange={() => setFormData({...formData, type: 'personal'})}
+                      type="checkbox"
+                      checked={formData.isBudgetingEnabled}
+                      onChange={e => setFormData({...formData, isBudgetingEnabled: e.target.checked})}
+                      className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
                     />
-                    <div className={cn(
-                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                      formData.type === 'personal' ? "border-[#86BC24]" : "border-slate-300"
-                    )}>
-                      {formData.type === 'personal' && <div className="w-2 h-2 rounded-full bg-[#86BC24]" />}
-                    </div>
-                    <span className="text-sm font-bold text-slate-900">Personal Finance</span>
+                    <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
+                      Budgeting (Category targets & limits)
+                    </span>
                   </label>
-
-                  <label className={cn(
-                    "flex items-center gap-3 p-4 border rounded-2xl cursor-pointer transition-all",
-                    formData.type === 'business' ? "border-[#86BC24] bg-[#86BC24]/5" : "border-slate-100 hover:border-slate-200"
-                  )}>
+                  <label className="flex items-center gap-3 cursor-pointer group">
                     <input 
-                      type="radio" 
-                      className="sr-only"
-                      checked={formData.type === 'business'}
-                      onChange={() => setFormData({...formData, type: 'business'})}
+                      type="checkbox"
+                      checked={formData.isGSTEnabled}
+                      onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
+                      className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
                     />
-                    <div className={cn(
-                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                      formData.type === 'business' ? "border-[#86BC24]" : "border-slate-300"
-                    )}>
-                      {formData.type === 'business' && <div className="w-2 h-2 rounded-full bg-[#86BC24]" />}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
+                        GST
+                      </span>
+                      <div className="group/help relative">
+                        <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
+                          If GST, Income category will have GST % field configurable & will be adjusted in Transactions
+                          <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-sm font-bold text-slate-900">Business Finance</span>
                   </label>
+                  {businesses.length > 1 && (
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input 
+                        type="checkbox"
+                        checked={formData.isDefault}
+                        onChange={e => setFormData({...formData, isDefault: e.target.checked})}
+                        className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
+                        Set as Default Business
+                      </span>
+                    </label>
+                  )}
                 </div>
               </div>
 
@@ -221,34 +247,6 @@ export default function BusinessSettings() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <Coins size={12} /> Reporting Currency
-                  </label>
-                  <select 
-                    value={formData.currency}
-                    onChange={e => setFormData({...formData, currency: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
-                  >
-                    {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <Clock size={12} /> Reporting Timezone
-                  </label>
-                  <select 
-                    value={formData.timezone}
-                    onChange={e => setFormData({...formData, timezone: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all"
-                  >
-                    {TIMEZONES.map(t => <option key={t} value={t}>{t}</option>)}
-                    {!TIMEZONES.includes(formData.timezone) && <option value={formData.timezone}>{formData.timezone}</option>}
-                  </select>
-                </div>
-              </div>
-
               <div className="pt-4 flex justify-end">
                 <button 
                   disabled={loading}
@@ -310,9 +308,20 @@ export default function BusinessSettings() {
               </div>
               
               <h3 className="text-xl font-bold text-center text-slate-900 mb-2">Delete Business?</h3>
-              <p className="text-sm text-slate-500 text-center mb-8 px-4">
-                Are you sure you want to delete <span className="font-bold text-slate-900">{activeBiz.name}</span>? This will permanently erase all data linked to this entity.
+              <p className="text-sm text-slate-500 text-center mb-6 px-4">
+                Are you sure you want to delete <span className="font-bold text-slate-900">{activeBiz.name}</span>?
               </p>
+
+              <div className="bg-slate-50 rounded-2xl p-4 mb-8 space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Categories</span>
+                  <span className="font-bold text-slate-900">{finData.budgets.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm border-t border-slate-100 pt-3">
+                  <span className="text-slate-500">Transactions</span>
+                  <span className="font-bold text-slate-900">{finData.expenses.length}</span>
+                </div>
+              </div>
 
               <div className="flex flex-col gap-3">
                 <button 

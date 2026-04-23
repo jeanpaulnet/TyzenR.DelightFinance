@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { useApp } from '../../AppContext';
+import { useApp, getBusinessSettings } from '../../AppContext';
 import { formatCurrency, cn } from '../../lib/utils';
 import { logEvent } from '../../lib/audit';
 import { 
@@ -7,7 +7,9 @@ import {
   ArrowDownRight,
   Activity,
   Clock,
-  ArrowRight
+  ArrowRight,
+  TrendingUp,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -47,20 +49,23 @@ export default function Dashboard() {
   const categoryMap = useMemo(() => {
     const map = new Map<string, string>();
     finData.budgets.forEach(b => {
-      map.set(b.category.toLowerCase(), b.type || 'Expense');
+      if (b.category) {
+        map.set(b.category.toLowerCase(), b.type || 'Expense');
+      }
     });
     return map;
   }, [finData.budgets]);
 
   const summary = useMemo(() => {
-    const currency = activeBusiness?.currency || 'USD';
+    const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
+    const currency = settings?.currency || 'USD';
     const totalSpent = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
     const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
     const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
     
     // Group by category
     const byCategory = filteredExpenses.reduce((acc: any, e) => {
-      const cat = e.category.toLowerCase().trim();
+      const cat = (e.category || 'Uncategorized').toLowerCase().trim();
       acc[cat] = (acc[cat] || 0) + e.amount;
       return acc;
     }, {});
@@ -69,10 +74,10 @@ export default function Dashboard() {
 
     // Budget variance
     const budgetByCategory = finData.budgets.reduce((acc: any, b) => {
-      const cat = b.category.toLowerCase().trim();
+      const cat = (b.category || 'Uncategorized').toLowerCase().trim();
       acc[cat] = {
         amount: (acc[cat]?.amount || 0) + b.amount,
-        originalName: b.category // Keep name for display
+        originalName: b.category || 'Uncategorized' // Keep name for display
       };
       return acc;
     }, {});
@@ -126,6 +131,51 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{activeBusiness?.name || 'Overview'}</h1>
+          <p className="text-sm text-slate-500 mt-1">Unified Health KPIs & Performance Analytics</p>
+        </div>
+      </div>
+
+      {/* KPI SNAPSHOT */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="dashboard-card shadow-sm p-6 bg-white border border-slate-100 flex flex-col justify-between">
+           <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Burn Rate</p>
+              <h3 className="text-2xl font-bold text-slate-900">{formatCurrency(summary.totalSpent / 30, summary.currency)}<span className="text-xs text-slate-400 font-medium ml-1">/ day</span></h3>
+           </div>
+           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-red-500 uppercase">
+              <ArrowUpRight size={14} />
+              Avg lifecycle expenditure
+           </div>
+        </div>
+        <div className="dashboard-card shadow-sm p-6 bg-white border border-slate-100 flex flex-col justify-between">
+           <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Savings Rate</p>
+              <h3 className="text-2xl font-bold text-slate-900">{Math.max(0, 100 - (summary.totalSpent / Math.max(1, summary.totalBudget) * 100)).toFixed(1)}%</h3>
+           </div>
+           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-emerald-500 uppercase">
+              <Activity size={14} />
+              Post-expense liquidity
+           </div>
+        </div>
+        <div className="dashboard-card shadow-sm p-6 bg-white border border-slate-100 flex flex-col justify-between">
+           <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Budget Health</p>
+              <h3 className="text-2xl font-bold text-slate-900">{(summary.totalSpent <= summary.totalBudget ? 100 : Math.max(0, 100 - ((summary.totalSpent - summary.totalBudget) / summary.totalBudget * 100))).toFixed(1)}%</h3>
+           </div>
+           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-indigo-500 uppercase">
+              <PieChartIcon size={14} />
+              Compliance score
+           </div>
+        </div>
+        <div className="dashboard-card shadow-sm p-6 bg-[#0F172A] border border-slate-800 flex flex-col justify-between">
+           <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Portfolio Value</p>
+              <h3 className="text-2xl font-bold text-white">{formatCurrency(summary.investmentValue, summary.currency)}</h3>
+           </div>
+           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-[#86BC24] uppercase">
+              <TrendingUp size={14} />
+              Cumulative Assets
+           </div>
         </div>
       </div>
 
@@ -216,7 +266,8 @@ export default function Dashboard() {
                         <span className={cn(
                           "text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded border bg-transparent",
                           (() => {
-                            const type = categoryMap.get(tx.category.toLowerCase()) || 'Expense';
+                            const catKey = (tx.category || 'Uncategorized').toLowerCase();
+                            const type = categoryMap.get(catKey) || 'Expense';
                             switch (type) {
                               case 'Income': return "text-green-600 border-green-200";
                               case 'Asset': return "text-blue-600 border-blue-200";
@@ -225,7 +276,7 @@ export default function Dashboard() {
                             }
                           })()
                         )}>
-                          {tx.category}
+                          {tx.category || 'Uncategorized'}
                         </span>
                       </div>
                     </div>
@@ -234,7 +285,8 @@ export default function Dashboard() {
                     <p className={cn(
                       "text-sm font-bold",
                       (() => {
-                        const type = categoryMap.get(tx.category.toLowerCase()) || 'Expense';
+                        const catKey = (tx.category || 'Uncategorized').toLowerCase();
+                        const type = categoryMap.get(catKey) || 'Expense';
                         return type === 'Income' ? "text-green-600" : "text-slate-900";
                       })()
                     )}>
@@ -243,7 +295,8 @@ export default function Dashboard() {
                     <p className={cn(
                       "text-[9px] font-mono mt-0.5 uppercase font-bold",
                       (() => {
-                        const type = categoryMap.get(tx.category.toLowerCase()) || 'Expense';
+                        const catKey = (tx.category || 'Uncategorized').toLowerCase();
+                        const type = categoryMap.get(catKey) || 'Expense';
                         switch (type) {
                           case 'Income': return "text-green-500";
                           case 'Asset': return "text-blue-500";
@@ -252,7 +305,7 @@ export default function Dashboard() {
                         }
                       })()
                     )}>
-                      {categoryMap.get(tx.category.toLowerCase()) || 'Expense'}
+                      {categoryMap.get((tx.category || 'Uncategorized').toLowerCase()) || 'Expense'}
                     </p>
                   </div>
                 </div>

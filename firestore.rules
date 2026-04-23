@@ -16,7 +16,7 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.token.email.lower() == "jeanpaulva@gmail.com" ||
         (exists(/databases/$(database)/documents/users_config/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users_config/$(request.auth.uid)).data.role == "Admin")
+         get(/databases/$(database)/documents/users_config/$(request.auth.uid)).data.get('role', 'User') == "Admin")
       );
     }
     
@@ -27,12 +27,12 @@ service cloud.firestore {
       return data.timestamp is string
         && data.userId == request.auth.uid
         && data.action in ["CREATE", "UPDATE", "DELETE", "VIEW", "IMPORT", "EXPORT", "INVITE", "LOGIN"]
-        && data.resourceType in ["business", "expense", "budget", "account", "investment", "user_config", "dashboard", "ai_assistant"];
+        && data.resourceType in ["business", "expense", "budget", "account", "investment", "user_config", "dashboard", "ai_assistant", "import_rule"];
     }
 
     // --- Audit Log Rules ---
     match /audit_logs/{logId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow read: if isSignedIn() && (isAdmin() || (resource != null && resource.data.userId == request.auth.uid));
       allow create: if isSignedIn() && isValidAuditLog(incoming());
       allow update, delete: if false; // Audit logs are immutable
     }
@@ -50,9 +50,9 @@ service cloud.firestore {
 
     // users_config Rules
     match /users_config/{docId} {
-      // Users can read any config (for search/display if needed, though usually restricted to themselves or admins)
-      // Here we allow reading any to support looking up invited users by email-slug.
-      allow read: if isSignedIn();
+      // Allow individual lookups for invites/self, but restrict bulk listing to admins
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
       
       allow create: if isSignedIn() && isValidUserConfig(incoming()) && (
         // Admin or Bootstrap Admin can create any config
@@ -77,12 +77,9 @@ service cloud.firestore {
     // --- Business Rules ---
     function isValidBusiness(data) {
       return data.name is string && data.name.size() <= 200
-        && data.type in ['personal', 'business']
-        && data.currency is string && data.currency.size() <= 10
-        && data.timezone is string && data.timezone.size() <= 100
+        && (data.get('isDefault', null) == null || data.isDefault is bool)
+        && data.settingsJson is string
         && data.userId == request.auth.uid
-        && (data.get('fiscalYearStart', null) == null || (data.fiscalYearStart is string && data.fiscalYearStart.size() <= 50))
-        && (data.get('fiscalYearEnd', null) == null || (data.fiscalYearEnd is string && data.fiscalYearEnd.size() <= 50))
         && (data.get('createdAt', null) == null || data.createdAt is string)
         && (data.get('updatedAt', null) == null || data.updatedAt is string);
     }
@@ -102,7 +99,9 @@ service cloud.firestore {
         && data.accountId is string && data.accountId.size() <= 100
         && data.businessId is string && data.businessId.size() <= 100
         && data.userId == request.auth.uid
+        && (data.get('originalAmount', null) == null || data.originalAmount is number)
         && (data.get('description', null) == null || data.description is string)
+        && (data.get('reference', null) == null || data.reference is string)
         && (data.get('notes', null) == null || data.notes is string)
         && (data.get('audited', null) == null || data.audited is bool)
         && (data.get('createdAt', null) == null || data.createdAt is string)
@@ -121,6 +120,7 @@ service cloud.firestore {
       return data.category is string && data.category.size() <= 100
         && data.amount is number
         && data.type in ['Income', 'Expense', 'Asset', 'Liability']
+        && (data.get('gstRate', null) == null || data.gstRate is number)
         && data.month is number && data.month >= 1 && data.month <= 12
         && data.year is number
         && data.businessId is string && data.businessId.size() <= 100
@@ -170,6 +170,24 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidId(investmentId) && isValidInvestment(incoming());
       allow update: if isOwner(userId) && isValidInvestment(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // --- Import Rule Rules ---
+    function isValidImportRule(data) {
+      return data.name is string && data.name.size() <= 200
+        && data.active is bool
+        && data.order is number
+        && data.businessId is string && data.businessId.size() <= 100
+        && data.userId == request.auth.uid
+        && data.conditions is list
+        && data.actions is list;
+    }
+
+    match /users/{userId}/import_rules/{ruleId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidImportRule(incoming());
+      allow update: if isOwner(userId) && isValidImportRule(incoming()) && incoming().userId == existing().userId;
       allow delete: if isOwner(userId);
     }
   }

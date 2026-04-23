@@ -1,77 +1,38 @@
 import React, { useState } from 'react';
 import { useApp } from '../../AppContext';
-import { db } from '../../lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { businessApi, categoryApi, transactionApi } from '../../lib/api';
 import { motion } from 'motion/react';
-import { Building2, Globe, Coins, Clock, ChevronRight, Loader2, X } from 'lucide-react';
+import { Building2, Wallet, TrendingUp, MessageSquare, ChevronRight, Loader2, X, User, PieChart, HelpCircle, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { auth } from '../../lib/firebase';
+import { signOut } from 'firebase/auth';
 
-const CURRENCIES = [
-  { code: 'USD', name: 'US Dollar', symbol: '$' },
-  { code: 'EUR', name: 'Euro', symbol: '€' },
-  { code: 'GBP', name: 'British Pound', symbol: '£' },
-  { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
-  { code: 'JPY', name: 'Japanese Yen', symbol: '¥' },
-  { code: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
-  { code: 'CAD', name: 'Canadian Dollar', symbol: 'C$' },
-];
-
-const TIMEZONES = [
-  'UTC',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Europe/London',
-  'Europe/Paris',
-  'Asia/Tokyo',
-  'Asia/Dubai',
-  'Asia/Kolkata',
-  'Australia/Sydney',
-];
-
-const PERSONAL_CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   { category: 'Housing', amount: 0, type: 'Expense' },
   { category: 'Food', amount: 0, type: 'Expense' },
   { category: 'Health', amount: 0, type: 'Expense' },
   { category: 'Transportation', amount: 0, type: 'Expense' },
   { category: 'Utility', amount: 0, type: 'Expense' },
-  { category: 'Education', amount: 0, type: 'Expense' },
   { category: 'Entertainment', amount: 0, type: 'Expense' },
-  { category: 'Gifts', amount: 0, type: 'Expense' },
-  { category: 'Loans', amount: 0, type: 'Expense' },
-  { category: 'Business', amount: 0, type: 'Expense' },
   { category: 'Miscellaneous', amount: 0, type: 'Expense' },
-  { category: 'Salary Income', amount: 0, type: 'Income' },
-  { category: 'Passive Income', amount: 0, type: 'Income' },
-  { category: 'Business Income', amount: 0, type: 'Income' },
-  { category: 'Portfolio Income', amount: 0, type: 'Income' },
-];
-
-const BUSINESS_CATEGORIES = [
-  { category: 'Rent & Lease', amount: 0, type: 'Expense' },
-  { category: 'Payroll', amount: 0, type: 'Expense' },
-  { category: 'Supplies', amount: 0, type: 'Expense' },
-  { category: 'Marketing', amount: 0, type: 'Expense' },
-  { category: 'Utilities', amount: 0, type: 'Expense' },
   { category: 'Travel', amount: 0, type: 'Expense' },
   { category: 'Software & Tools', amount: 0, type: 'Expense' },
-  { category: 'Tax', amount: 0, type: 'Expense' },
-  { category: 'Insurance', amount: 0, type: 'Expense' },
-  { category: 'Professional Services', amount: 0, type: 'Expense' },
-  { category: 'Services Revenue', amount: 0, type: 'Income' },
-  { category: 'Product Sales', amount: 0, type: 'Income' },
+  { category: 'Marketing', amount: 0, type: 'Expense' },
+  { category: 'Salary Income', amount: 0, type: 'Income' },
+  { category: 'Business Income', amount: 0, type: 'Income' },
   { category: 'Other Income', amount: 0, type: 'Income' },
+  { category: 'Other Expense', amount: 0, type: 'Expense' },
 ];
 
 export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
-  const { user, businesses } = useApp();
+  const { user, businesses, refreshData, setActiveTab, setActiveBusinessId } = useApp();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.displayName ? `${user.displayName}'s Finance` : '',
-    type: 'personal' as 'personal' | 'business',
     currency: 'USD',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    isBudgetingEnabled: true,
+    isGSTEnabled: false
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,63 +41,68 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
 
     setLoading(true);
     try {
-      const bizRef = collection(db, 'users', user.uid, 'businesses');
-      const bizDoc = await addDoc(bizRef, {
-        ...formData,
-        userId: user.uid,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      const bizRes = await businessApi.create({
+        name: formData.name,
+        isDefault: true,
+        settings: {
+          currency: formData.currency,
+          timezone: formData.timezone,
+          isBudgetingEnabled: formData.isBudgetingEnabled,
+          isGstEnabled: formData.isGSTEnabled
+        }
       });
+      const bizId = bizRes.data.id;
+      
+      // Set the active business ID immediately so subsequent refreshes work
+      setActiveBusinessId(bizId);
 
-      // Initialize default budgets for the new business based on type
-      const budgetRef = collection(db, 'users', user.uid, 'budgets');
+      // Initialize default budgets for the new business
       const now = new Date();
-      const categories = formData.type === 'personal' ? PERSONAL_CATEGORIES : BUSINESS_CATEGORIES;
-
-      for (const cat of categories) {
-        await addDoc(budgetRef, {
-          ...cat,
-          businessId: bizDoc.id,
+      const categoryIdMap: Record<string, string> = {};
+      
+      for (const cat of DEFAULT_CATEGORIES) {
+        const catRes = await categoryApi.create(bizId, {
+          name: cat.category,
+          type: cat.type,
           month: now.getMonth() + 1,
-          year: now.getFullYear(),
-          userId: user.uid,
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString()
+          year: now.getFullYear()
         });
+        if (catRes.data && catRes.data.id) {
+          categoryIdMap[cat.category] = catRes.data.id;
+        }
       }
 
-      // Initialize default transactions for the new business (Requested: current & past month)
-      const expenseRef = collection(db, 'users', user.uid, 'expenses');
+      // Initialize default transactions for the new business
+      // Using 'Business Income' or 'Other Expense' as fallback if 'Business' name not found
+      const businessCatId = categoryIdMap['Business Income'] || Object.values(categoryIdMap)[0];
       
       // Transaction 1: Current Month
-      await addDoc(expenseRef, {
+      await transactionApi.create({
         amount: 85.50,
-        category: 'Business',
+        deductions: 0,
+        finalAmount: 85.50,
+        categoryId: businessCatId,
         description: 'Monthly Software Subscription',
         date: now.toISOString(),
         notes: 'Initial setup transaction',
-        accountId: 'default',
-        businessId: bizDoc.id,
-        userId: user.uid,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString()
+        businessId: bizId
       });
 
       // Transaction 2: Past Month
       const pastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
-      await addDoc(expenseRef, {
+      await transactionApi.create({
         amount: 450.00,
-        category: 'Business',
+        deductions: 0,
+        finalAmount: 450.00,
+        categoryId: businessCatId,
         description: 'Office Consulting Fee',
         date: pastMonth.toISOString(),
         notes: 'Legacy cleanup record',
-        accountId: 'default',
-        businessId: bizDoc.id,
-        userId: user.uid,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString()
+        businessId: bizId
       });
       
+      await refreshData();
+      setActiveTab('dashboard');
       if (onClose) {
         onClose();
       }
@@ -170,7 +136,7 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
               <div className="space-y-4">
                  <h1 className="text-3xl font-bold tracking-tight leading-tight">Setup your <span className="text-[#86BC24]">Financial Profile</span></h1>
                  <p className="text-slate-400 text-sm leading-relaxed">
-                   Delight Finance supports multi-entity management. Let's start by defining your primary account unit.
+                   Delight Finance supports multiple business. Let's start by defining your primary business.
                  </p>
               </div>
            </div>
@@ -178,26 +144,45 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
            <div className="space-y-4 pt-10">
               <div className="flex items-start gap-3">
                  <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-[#86BC24] shrink-0 border border-white/5">
-                    <Coins size={16} />
+                    <Wallet size={16} />
                  </div>
                  <div>
-                    <p className="text-xs font-bold text-slate-200 uppercase tracking-widest">Multi-Currency</p>
-                    <p className="text-[10px] text-slate-500">Track and report in any global currency.</p>
+                    <p className="text-xs font-bold text-slate-200 uppercase tracking-widest">BUDGETING</p>
+                    <p className="text-[10px] text-slate-500">Enable category targets & variance monitoring.</p>
                  </div>
               </div>
               <div className="flex items-start gap-3">
                  <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-[#86BC24] shrink-0 border border-white/5">
-                    <Globe size={16} />
+                    <TrendingUp size={16} />
                  </div>
                  <div>
-                    <p className="text-xs font-bold text-slate-200 uppercase tracking-widest">Timezone Aware</p>
-                    <p className="text-[10px] text-slate-500">Accurate audit trails across global borders.</p>
+                    <p className="text-xs font-bold text-slate-200 uppercase tracking-widest">KPIs</p>
+                    <p className="text-[10px] text-slate-500">Real-time performance metrics and health scores.</p>
+                 </div>
+              </div>
+              <div className="flex items-start gap-3">
+                 <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-[#86BC24] shrink-0 border border-white/5">
+                    <MessageSquare size={16} />
+                 </div>
+                 <div>
+                    <p className="text-xs font-bold text-slate-200 uppercase tracking-widest">AI CHAT</p>
+                    <p className="text-[10px] text-slate-500">Intelligent insights powered by advanced logic.</p>
                  </div>
               </div>
            </div>
         </div>
 
-        <div className="md:col-span-3 p-10 bg-white">
+        <div className="md:col-span-3 p-10 bg-white relative">
+           {!businesses.length && (
+             <button 
+               onClick={() => signOut(auth)}
+               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider"
+               title="Log Out"
+             >
+               <LogOut size={14} />
+               <span>Logout</span>
+             </button>
+           )}
            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -213,90 +198,43 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
                  />
               </div>
 
-              <div className="space-y-3">
-                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Profile Type</label>
-                 <div className="grid grid-cols-1 gap-3">
-                    <label className={cn(
-                      "relative flex items-center gap-3 p-4 border rounded-2xl cursor-pointer transition-all",
-                      formData.type === 'personal' ? "border-[#86BC24] bg-[#86BC24]/5" : "border-slate-100 hover:border-slate-200"
-                    )}>
-                       <input 
-                        type="radio" 
-                        name="type" 
-                        className="sr-only"
-                        checked={formData.type === 'personal'}
-                        onChange={() => setFormData({...formData, type: 'personal'})}
-                       />
-                       <div className={cn(
-                         "w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all",
-                         formData.type === 'personal' ? "border-[#86BC24]" : "border-slate-300"
-                       )}>
-                          {formData.type === 'personal' && <div className="w-2 h-2 rounded-full bg-[#86BC24]" />}
-                       </div>
-                       <div>
-                          <p className="text-sm font-bold text-slate-900">Personal Finance</p>
-                          <p className="text-[10px] text-slate-500 font-medium">Focused on Budgeting & Household expenses</p>
-                       </div>
+              <div className="space-y-4">
+                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <TrendingUp size={12} />
+                    Features
+                 </label>
+                 <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input 
+                        type="checkbox"
+                        checked={formData.isBudgetingEnabled}
+                        onChange={e => setFormData({...formData, isBudgetingEnabled: e.target.checked})}
+                        className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                        Budgeting
+                      </span>
                     </label>
-
-                    <label className={cn(
-                      "relative flex items-center gap-3 p-4 border rounded-2xl cursor-pointer transition-all",
-                      formData.type === 'business' ? "border-[#86BC24] bg-[#86BC24]/5" : "border-slate-100 hover:border-slate-200"
-                    )}>
-                       <input 
-                        type="radio" 
-                        name="type" 
-                        className="sr-only"
-                        checked={formData.type === 'business'}
-                        onChange={() => setFormData({...formData, type: 'business'})}
-                       />
-                       <div className={cn(
-                         "w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all",
-                         formData.type === 'business' ? "border-[#86BC24]" : "border-slate-300"
-                       )}>
-                          {formData.type === 'business' && <div className="w-2 h-2 rounded-full bg-[#86BC24]" />}
-                       </div>
-                       <div>
-                          <p className="text-sm font-bold text-slate-900">Business Finance</p>
-                          <p className="text-[10px] text-slate-500 font-medium">Focused on Accounting & Corporate ledgers</p>
-                       </div>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input 
+                        type="checkbox"
+                        checked={formData.isGSTEnabled}
+                        onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
+                        className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
+                      />
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                          GST
+                        </span>
+                        <div className="group/help relative">
+                          <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20 text-center">
+                            If GST, Income category will have GST % field configurable & will be adjusted in Transactions
+                            <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
+                          </div>
+                        </div>
+                      </div>
                     </label>
-                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                       <Coins size={12} />
-                       Reporting Currency
-                    </label>
-                    <select 
-                       value={formData.currency}
-                       onChange={e => setFormData({...formData, currency: e.target.value})}
-                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
-                    >
-                       {CURRENCIES.map(c => (
-                          <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
-                       ))}
-                    </select>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                       <Clock size={12} />
-                       Reporting Timezone
-                    </label>
-                    <select 
-                       value={formData.timezone}
-                       onChange={e => setFormData({...formData, timezone: e.target.value})}
-                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
-                    >
-                       {TIMEZONES.map(t => (
-                          <option key={t} value={t}>{t}</option>
-                       ))}
-                       {!TIMEZONES.includes(formData.timezone) && (
-                         <option value={formData.timezone}>{formData.timezone}</option>
-                       )}
-                    </select>
                  </div>
               </div>
 

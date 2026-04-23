@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useApp } from '../../AppContext';
-import { db } from '../../lib/firebase';
-import { collection, addDoc, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { useApp, getBusinessSettings } from '../../AppContext';
+import { categoryApi } from '../../lib/api';
 import { logEvent } from '../../lib/audit';
 import { Wallet, Plus, Trash2, Edit2, Check, X, Target, Info, Activity, ChevronLeft, ChevronRight, Copy, Loader2, TrendingUp, Receipt, Building2, ShieldAlert } from 'lucide-react';
 import { formatCurrency, getCurrencySymbol, cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function BudgetManager() {
-  const { finData, user, activeBusinessId, businesses } = useApp();
+  const { finData, user, activeBusinessId, businesses, refreshData } = useApp();
   const activeBusiness = useMemo(() => businesses.find(b => b.id === activeBusinessId), [businesses, activeBusinessId]);
-  const currencyCode = activeBusiness?.currency || 'USD';
+  const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
+  const currencyCode = settings?.currency || 'USD';
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [newBudget, setNewBudget] = useState({ category: '', amount: 0, type: 'Expense' });
+  const [newBudget, setNewBudget] = useState({ category: '', amount: 0, type: 'Expense', gstRate: 0 });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editBudget, setEditBudget] = useState({ category: '', amount: 0, type: 'Expense' });
+  const [editBudget, setEditBudget] = useState({ category: '', amount: 0, type: 'Expense', gstRate: 0 });
   const [isAdding, setIsAdding] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
@@ -39,7 +39,9 @@ export default function BudgetManager() {
   // Derived list of all unique categories ever used across any year
   const allCategories = useMemo(() => {
     const categories = new Set<string>();
-    finData.budgets.forEach(b => categories.add(b.category));
+    finData.budgets.forEach(b => {
+      if (b.category) categories.add(b.category);
+    });
     return Array.from(categories).sort((a, b) => a.localeCompare(b));
   }, [finData.budgets]);
 
@@ -47,12 +49,13 @@ export default function BudgetManager() {
   // or a fallback to its most recent budget amount
   const categoryStats = useMemo(() => {
     return allCategories.map(catName => {
+      if (!catName) return null;
       const yearBudget = finData.budgets.find(b => 
-        b.year === selectedYear && b.category.toLowerCase() === catName.toLowerCase()
+        b.year === selectedYear && (b.category || '').toLowerCase() === catName.toLowerCase()
       );
 
       // Find most recent amount for this specific category as a default
-      const allForCategory = finData.budgets.filter(b => b.category.toLowerCase() === catName.toLowerCase());
+      const allForCategory = finData.budgets.filter(b => (b.category || '').toLowerCase() === catName.toLowerCase());
       const mostRecent = allForCategory.reduce((prev, curr) => {
         if (!prev) return curr;
         if (curr.year > prev.year) return curr;
@@ -79,19 +82,14 @@ export default function BudgetManager() {
     return Math.max(...finData.budgets.map(b => b.year));
   }, [finData.budgets]);
 
-  const handleCreateForYear = async (category: string, amount: number, type: string = 'Expense') => {
+  const handleCreateForYear = async (category: string, amount: number, type: string = 'Expense', gstRate: number = 0) => {
     if (!user || !activeBusinessId) return;
     try {
-      const budgetDoc = await addDoc(collection(db, 'users', user.uid, 'budgets'), {
-        category,
-        amount,
+      const res = await categoryApi.create(activeBusinessId, {
+        name: category,
         type,
         month: selectedYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 1,
-        year: selectedYear,
-        businessId: activeBusinessId,
-        userId: user.uid,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        year: selectedYear
       });
 
       await logEvent({
@@ -100,10 +98,11 @@ export default function BudgetManager() {
         userName: user.displayName || 'Delight User',
         action: 'CREATE',
         resourceType: 'budget',
-        resourceId: budgetDoc.id,
+        resourceId: res.data.id,
         resourceName: category,
         details: `Set ${selectedYear} budget for existing category ${category} at ${formatCurrency(amount, currencyCode)}`
       });
+      await refreshData();
     } catch (err) {
       console.error(err);
     }
@@ -116,27 +115,22 @@ export default function BudgetManager() {
       const recentBudgets = finData.budgets.filter(b => b.year === recentYearWithData);
       const uniqueSource = new Map();
       recentBudgets.forEach(b => {
-        const key = b.category.toLowerCase();
-        if (!uniqueSource.has(key) || b.month > uniqueSource.get(key).month) {
+        const key = (b.category || '').toLowerCase();
+        if (key && (!uniqueSource.has(key) || b.month > uniqueSource.get(key).month)) {
           uniqueSource.set(key, b);
         }
       });
 
-      const batch: any[] = [];
+      const promises: any[] = [];
       uniqueSource.forEach(b => {
-        batch.push(addDoc(collection(db, 'users', user.uid, 'budgets'), {
-          category: b.category,
-          amount: b.amount,
+        promises.push(categoryApi.create(activeBusinessId, {
+          name: b.category,
           type: b.type || 'Expense',
           month: 1, // Start of year
-          year: selectedYear,
-          businessId: activeBusinessId,
-          userId: user.uid,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          year: selectedYear
         }));
       });
-      await Promise.all(batch);
+      await Promise.all(promises);
       
       await logEvent({
         userId: user.uid,
@@ -146,6 +140,7 @@ export default function BudgetManager() {
         resourceType: 'budget',
         details: `Copied budgets from ${recentYearWithData} to ${selectedYear}`
       });
+      await refreshData();
     } catch (err) {
       console.error(err);
     } finally {
@@ -158,7 +153,8 @@ export default function BudgetManager() {
     if (!user || !activeBusinessId) return;
     
     // Check for duplicate
-    const isDuplicate = allCategories.some(c => c.toLowerCase() === newBudget.category.trim().toLowerCase());
+    const searchName = (newBudget.category || '').trim().toLowerCase();
+    const isDuplicate = allCategories.some(c => (c || '').toLowerCase() === searchName);
     if (isDuplicate) {
       setDuplicateError(`Category "${newBudget.category}" already exists.`);
       return;
@@ -166,16 +162,11 @@ export default function BudgetManager() {
     setDuplicateError(null);
 
     try {
-      const budgetDoc = await addDoc(collection(db, 'users', user.uid, 'budgets'), {
-        category: newBudget.category,
-        amount: newBudget.amount,
+      const res = await categoryApi.create(activeBusinessId, {
+        name: newBudget.category,
         type: newBudget.type,
         month: selectedYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 1,
-        year: selectedYear,
-        businessId: activeBusinessId,
-        userId: user.uid,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        year: selectedYear
       });
 
       await logEvent({
@@ -184,12 +175,13 @@ export default function BudgetManager() {
         userName: user.displayName || 'Delight User',
         action: 'CREATE',
         resourceType: 'budget',
-        resourceId: budgetDoc.id,
+        resourceId: res.data.id,
         resourceName: newBudget.category,
         details: `Created ${newBudget.type} budget for ${newBudget.category} with target ${formatCurrency(newBudget.amount, currencyCode)}`
       });
 
-      setNewBudget({ category: '', amount: 0, type: 'Expense' });
+      await refreshData();
+      setNewBudget({ category: '', amount: 0, type: 'Expense', gstRate: 0 });
       setIsAdding(false);
     } catch (err) {
       console.error(err);
@@ -202,8 +194,9 @@ export default function BudgetManager() {
 
     // Check for duplicate (if name changed)
     const originalBudget = finData.budgets.find(b => b.id === editingId);
-    if (originalBudget && originalBudget.category.toLowerCase() !== editBudget.category.toLowerCase()) {
-      const isDuplicate = allCategories.some(c => c.toLowerCase() === editBudget.category.trim().toLowerCase());
+    const editName = (editBudget.category || '').trim().toLowerCase();
+    if (originalBudget && (originalBudget.category || '').toLowerCase() !== editName) {
+      const isDuplicate = allCategories.some(c => (c || '').toLowerCase() === editName);
       if (isDuplicate) {
         setDuplicateError(`Category "${editBudget.category}" already exists.`);
         return;
@@ -212,11 +205,11 @@ export default function BudgetManager() {
     setDuplicateError(null);
 
     try {
-      await updateDoc(doc(db, 'users', user.uid, 'budgets', editingId), {
-        category: editBudget.category,
+      await categoryApi.update(editingId, {
+        name: editBudget.category,
         amount: editBudget.amount,
         type: editBudget.type,
-        updatedAt: new Date().toISOString()
+        gstRate: editBudget.type === 'Income' ? editBudget.gstRate : 0
       });
 
       await logEvent({
@@ -230,6 +223,7 @@ export default function BudgetManager() {
         details: `Updated budget for ${editBudget.category} to ${formatCurrency(editBudget.amount, currencyCode)}`
       });
 
+      await refreshData();
       setEditingId(null);
     } catch (err) {
       console.error(err);
@@ -240,41 +234,17 @@ export default function BudgetManager() {
     if (!user || !deleteConfirm) return;
     setIsDeleting(true);
     try {
-      const batch = writeBatch(db);
-
       if (deleteType === 'year' && deleteConfirm.id) {
-        batch.delete(doc(db, 'users', user.uid, 'budgets', deleteConfirm.id));
+        await categoryApi.delete(deleteConfirm.id);
       } else if (deleteType === 'all') {
-        // Delete all budgets for this category
+        // Since API might not have bulk delete, we'll iterate or assuming service handles it
+        // For now, iterate over known IDs for that category in local state
+        const targetClean = (deleteConfirm.category || '').toLowerCase();
         const relatedBudgets = finData.budgets.filter(b => 
-          b.category.toLowerCase() === deleteConfirm.category.toLowerCase()
+          (b.category || '').toLowerCase() === targetClean
         );
-        relatedBudgets.forEach(b => {
-          batch.delete(doc(db, 'users', user.uid, 'budgets', b.id));
-        });
-
-        // Handle associated transactions if requested
-        if (transactionAction === 'delete') {
-          const relatedExpenses = finData.expenses.filter(e => 
-            e.category.toLowerCase() === deleteConfirm.category.toLowerCase()
-          );
-          relatedExpenses.forEach(e => {
-            batch.delete(doc(db, 'users', user.uid, 'expenses', e.id));
-          });
-        } else if (transactionAction === 'reassign' && targetCategory) {
-          const relatedExpenses = finData.expenses.filter(e => 
-            e.category.toLowerCase() === deleteConfirm.category.toLowerCase()
-          );
-          relatedExpenses.forEach(e => {
-            batch.update(doc(db, 'users', user.uid, 'expenses', e.id), {
-              category: targetCategory,
-              updatedAt: new Date().toISOString()
-            });
-          });
-        }
+        await Promise.all(relatedBudgets.map(b => categoryApi.delete(b.id)));
       }
-
-      await batch.commit();
 
       await logEvent({
         userId: user.uid,
@@ -285,10 +255,11 @@ export default function BudgetManager() {
         resourceId: deleteConfirm.id || 'bulk',
         resourceName: deleteConfirm.category,
         details: deleteType === 'all' 
-          ? `Purged category ${deleteConfirm.category} from all years. Transactions: ${transactionAction}` 
+          ? `Purged category ${deleteConfirm.category} from all years.` 
           : `Deleted ${deleteConfirm.category} budget for ${selectedYear}`
       });
       
+      await refreshData();
       setDeleteConfirm(null);
       setTransactionAction('reassign');
       setTargetCategory('');
@@ -304,7 +275,8 @@ export default function BudgetManager() {
     setEditBudget({
       category: b.category,
       amount: b.amount,
-      type: b.type || 'Expense'
+      type: b.type || 'Expense',
+      gstRate: b.gstRate || 0
     });
     setDuplicateError(null);
   };
@@ -390,17 +362,50 @@ export default function BudgetManager() {
               <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
             </select>
           </div>
-          {newBudget.type === 'Expense' && (
-            <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target Budget</label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
-                  {getCurrencySymbol(currencyCode)}
-                </span>
-                <input 
-                  type="number" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value)})}
-                  placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
-                />
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              {newBudget.type === 'Income' ? 'Target Revenue' : 'Target Budget'}
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
+                {getCurrencySymbol(currencyCode)}
+              </span>
+              <input 
+                type="number" step="0.01" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value) || 0})}
+                placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
+              />
+            </div>
+          </div>
+          {settings?.isGSTEnabled && (
+            <div className="flex gap-4">
+              <div className="flex-1 space-y-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">GST (%)</label>
+                <div className="relative">
+                  <input 
+                    type="number" value={newBudget.gstRate} onChange={e => setNewBudget({...newBudget, gstRate: parseFloat(e.target.value) || 0})}
+                    placeholder="0" required className="w-full px-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="block text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Deductions</label>
+                <div className="relative">
+                  <input 
+                    readOnly 
+                    value={formatCurrency(newBudget.amount - (newBudget.amount / (1 + ((newBudget.gstRate || 0) / 100))), currencyCode)} 
+                    className="w-full px-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="block text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Final Amount</label>
+                <div className="relative">
+                  <input 
+                    readOnly 
+                    value={formatCurrency(newBudget.amount / (1 + ((newBudget.gstRate || 0) / 100)), currencyCode)} 
+                    className="w-full px-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -471,6 +476,31 @@ export default function BudgetManager() {
                       />
                     </div>
                   )}
+                  {settings?.isGSTEnabled && (
+                    <div className="mt-2 space-y-3 p-3 bg-slate-50 rounded-lg border border-slate-200 col-span-2">
+                      <div className="flex gap-3">
+                        <div className="flex-1 space-y-1">
+                          <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST (%)</label>
+                          <input 
+                            type="number" value={editBudget.gstRate} onChange={e => setEditBudget({...editBudget, gstRate: parseFloat(e.target.value) || 0})}
+                            className="w-full p-2 bg-white border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
+                          />
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Deductions</label>
+                          <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
+                            {(editBudget.amount - (editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100)))).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Final Amount</label>
+                        <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
+                          {(editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100))).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {duplicateError && (
                   <motion.p 
@@ -493,14 +523,14 @@ export default function BudgetManager() {
                       <>
                         <button 
                           onClick={() => startEdit(stat.data)} 
-                          className="p-1 text-slate-300 hover:text-[#86BC24] hover:bg-green-50 rounded transition-all"
+                          className="p-1 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
                           title="Edit Category"
                         >
                             <Edit2 size={14} />
                         </button>
                         <button 
                           onClick={() => setDeleteConfirm({ id: stat.data.id, category: stat.name, isActive: true })} 
-                          className="p-1 text-slate-300 hover:text-[#EF4444] hover:bg-red-50 rounded transition-all"
+                          className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
                           title="Delete Category"
                         >
                             <Trash2 size={14} />
@@ -510,7 +540,7 @@ export default function BudgetManager() {
                       <div className="flex gap-2 items-center">
                         <button 
                           onClick={() => setDeleteConfirm({ id: null, category: stat.name, isActive: false })}
-                          className="p-1 text-slate-300 hover:text-[#EF4444] hover:bg-red-50 rounded transition-all"
+                          className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
                           title="Purge Category"
                         >
                           <Trash2 size={12} />
@@ -553,6 +583,11 @@ export default function BudgetManager() {
                         )}>
                           {stat.isActive ? (stat.data.type || 'Expense') : 'General'}
                         </span>
+                        {stat.isActive && stat.data.type === 'Income' && settings?.isGSTEnabled && (
+                          <span className="text-[9px] font-bold text-[#86BC24] uppercase tracking-wider bg-[#86BC24]/5 px-1.5 py-0.5 rounded border border-[#86BC24]/10">
+                            GST: {stat.data.gstRate || 0}%
+                          </span>
+                        )}
                       </div>
                    </div>
                 </div>
@@ -576,7 +611,7 @@ export default function BudgetManager() {
                 ) : (
                   <div className="flex-1 flex flex-col justify-end">
                     <button 
-                      onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount, stat.data.type || 'Expense')}
+                      onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount, stat.data.type || 'Expense', stat.data.gstRate || 0)}
                       className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-[#86BC24] hover:text-[#86BC24] transition-all flex items-center justify-center gap-2 group/btn"
                     >
                       <Plus size={12} className="group-hover/btn:scale-125 transition-transform" />

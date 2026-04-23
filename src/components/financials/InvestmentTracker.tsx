@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useApp } from '../../AppContext';
+import { useApp, getBusinessSettings } from '../../AppContext';
 import { formatCurrency, getCurrencySymbol, cn } from '../../lib/utils';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, deleteDoc, doc } from 'firebase/firestore';
@@ -20,7 +20,8 @@ const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308'
 export default function InvestmentTracker() {
   const { finData, user, activeBusinessId, businesses } = useApp();
   const activeBusiness = useMemo(() => businesses.find(b => b.id === activeBusinessId), [businesses, activeBusinessId]);
-  const currencyCode = activeBusiness?.currency || 'USD';
+  const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
+  const currencyCode = settings?.currency || 'USD';
 
   const [newInv, setNewInv] = useState({ symbol: '', quantity: 0, purchasePrice: 0, assetClass: 'Stock' });
   const [showAdd, setShowAdd] = useState(false);

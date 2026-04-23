@@ -16,7 +16,8 @@ import {
   PieChart,
   BarChart,
   Activity,
-  User
+  User,
+  Zap
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,6 +27,7 @@ import AIChat from './components/financials/AIChat';
 import Transactions from './components/financials/Transactions';
 import BusinessSetup from './components/financials/BusinessSetup';
 import BusinessSettings from './components/financials/BusinessSettings';
+import ImportRules from './components/financials/ImportRules';
 import Header from './components/financials/Header';
 
 function MainApp() {
@@ -33,12 +35,28 @@ function MainApp() {
   const [isAddingBusiness, setIsAddingBusiness] = useState(false);
   const [hasLanded, setHasLanded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const APP_VERSION = '2.0';
+
+  const handleLogin = async () => {
+    try {
+      setLoginError(null);
+      await signInWithGoogle();
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError('Login popup was blocked. Please enable popups or try opening the app in a new tab.');
+      } else {
+        setLoginError('Failed to sign in. Please check your connection and try again.');
+      }
+    }
+  };
 
   const allTabs = useMemo(() => [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: !!menuAccess?.dashboard },
     { id: 'transactions', label: 'Transactions', icon: Activity, visible: !!menuAccess?.transactions },
     { id: 'budgets', label: 'Categories', icon: Wallet, visible: !!menuAccess?.budgets },
+    { id: 'rules', label: 'Rules', icon: Zap, visible: !!menuAccess?.rules },
     { id: 'ai', label: 'AI Chat', icon: MessageSquare, visible: !!menuAccess?.ai },
   ], [menuAccess]);
 
@@ -136,8 +154,15 @@ function MainApp() {
               </div>
 
               <div className="space-y-4">
+                {loginError && (
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-lg flex items-center gap-2 text-red-600 text-[10px] font-bold uppercase animate-in fade-in slide-in-from-top-1">
+                    <X size={14} className="shrink-0" />
+                    {loginError}
+                  </div>
+                )}
+                
                 <button 
-                  onClick={signInWithGoogle}
+                  onClick={handleLogin}
                   className="w-full h-12 flex items-center justify-center gap-3 bg-white border border-[#E2E8F0] text-[#1E293B] rounded-lg font-semibold text-sm hover:bg-slate-50 transition-all shadow-sm active:scale-[0.98]"
                 >
                   <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" className="w-5 h-5" />
@@ -260,6 +285,7 @@ function MainApp() {
               {activeTab === 'dashboard' && <Dashboard />}
               {activeTab === 'transactions' && <Transactions />}
               {activeTab === 'budgets' && <BudgetManager />}
+              {activeTab === 'rules' && <ImportRules />}
               {activeTab === 'ai' && <AIChat />}
               {activeTab === 'business-settings' && <BusinessSettings />}
             </motion.div>

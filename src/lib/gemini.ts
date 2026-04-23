@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { aiApi } from './api';
 
 export interface FinancialData {
   expenses: any[];
@@ -42,22 +42,14 @@ export const analyzeFinancialHealth = async (data: FinancialData, userQuery?: st
   const prompt = userQuery || "Analyze my current financial health and identify the top 3 risks.";
 
   try {
-    const ai = new GoogleGenAI({ apiKey: (process.env as any).GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `${systemInstruction}\n\nUser Question: ${prompt}`,
-      config: {
-        temperature: 0.7,
-      },
-    });
-
+    const res = await aiApi.chat(`${systemInstruction}\n\nUser Question: ${prompt}`);
     return {
-      text: response.text || "No analysis could be generated.",
+      text: res.data.text || "No analysis could be generated.",
       metadata: {
         correlationId: `INT-${Date.now()}`,
         dataSnapshot: `DTA-${data.expenses.length}e`,
         timestamp: new Date().toISOString(),
-        modelUsed: "gemini-3-flash-preview"
+        modelUsed: res.data.metadata?.model || "external-api"
       }
     };
   } catch (error) {

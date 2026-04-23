@@ -39,6 +39,7 @@ export default function HistoryModal({ isOpen, onClose, title, resourceId, userI
       q = query(
         collection(db, 'audit_logs'),
         where('resourceId', '==', resourceId),
+        where('userId', '==', userId),
         orderBy('timestamp', 'desc')
       );
     } else if (userId) {
@@ -152,7 +153,7 @@ export default function HistoryModal({ isOpen, onClose, title, resourceId, userI
                         </div>
                         
                         <p className="text-sm font-bold text-slate-900 mb-1">
-                          {log.action.toLowerCase().replace('_', ' ')}d {log.resourceType}
+                          {(log.action || '').toLowerCase().replace('_', ' ')}d {log.resourceType}
                           {log.resourceName && <span className="text-indigo-600 ml-1">"{log.resourceName}"</span>}
                         </p>
                         

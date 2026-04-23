@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from './lib/firebase';
 import { logEvent } from './lib/audit';
+import { businessApi, transactionApi, ruleApi } from './lib/api';
 import { collection, query, onSnapshot, getDocs, addDoc, doc, getDoc, setDoc, where, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 interface MenuAccess {
@@ -9,19 +10,40 @@ interface MenuAccess {
   transactions: boolean;
   budgets: boolean;
   ai: boolean;
+  rules?: boolean;
+}
+
+export interface BusinessSettings {
+  currency: string;
+  timezone: string;
+  isBudgetingEnabled: boolean;
+  isGSTEnabled: boolean;
+  fiscalYearStart?: string;
+  fiscalYearEnd?: string;
 }
 
 export interface Business {
   id: string;
   name: string;
-  type: 'personal' | 'business';
-  currency: string;
-  timezone: string;
-  fiscalYearStart?: string;
-  fiscalYearEnd?: string;
+  isDefault?: boolean;
+  settingsJson: string; // Stored as JSON string
   userId: string;
   createdAt: string;
   updatedAt: string;
+  IsDeleted?: boolean;
+}
+
+export function getBusinessSettings(business: Business): BusinessSettings {
+  try {
+    return JSON.parse(business.settingsJson);
+  } catch (e) {
+    return {
+      currency: 'USD',
+      timezone: 'UTC',
+      isBudgetingEnabled: true,
+      isGSTEnabled: false
+    };
+  }
 }
 
 export interface DateFilter {
@@ -44,11 +66,13 @@ interface AppContextType {
   setDateFilter: (filter: DateFilter) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  refreshData: () => Promise<void>;
   finData: {
     expenses: any[];
     budgets: any[];
     accounts: any[];
     investments: any[];
+    rules: any[];
   };
 }
 
@@ -56,14 +80,16 @@ const DEFAULT_MENU_ACCESS: MenuAccess = {
   dashboard: true,
   transactions: true,
   budgets: true,
-  ai: true
+  ai: true,
+  rules: true
 };
 
 const ADMIN_MENU_ACCESS: MenuAccess = {
   dashboard: true,
   transactions: true,
   budgets: true,
-  ai: true
+  ai: true,
+  rules: true
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -105,7 +131,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     budgets: [],
     accounts: [],
     investments: [],
+    rules: [],
   });
+
+  const refreshData = async () => {
+    if (!user) return;
+    try {
+      // 1. Refresh Business list first (critical if we just created one)
+      const businessesRes = await businessApi.list().catch(() => ({ data: [] }));
+      const currentBusinesses = businessesRes.data || [];
+      setBusinesses(currentBusinesses);
+
+      // If no active business but we have businesses, pick one (usually happens after first creation)
+      let effectiveBizId = activeBusinessId;
+      if (!effectiveBizId && currentBusinesses.length > 0) {
+        const defaultBiz = currentBusinesses.find((b: any) => b.isDefault) || currentBusinesses[0];
+        effectiveBizId = defaultBiz.id;
+        setActiveBusinessId(effectiveBizId);
+      }
+
+      if (!effectiveBizId) return;
+
+      // 2. Fetch specific business data
+      const [catRes, ruleRes, txRes] = await Promise.all([
+        businessApi.listCategories(effectiveBizId),
+        ruleApi.list(effectiveBizId).catch(() => ({ data: [] })),
+        transactionApi.list(effectiveBizId).catch(() => ({ data: [] }))
+      ]);
+
+      setFinData(prev => ({
+        ...prev,
+        budgets: catRes.data || [],
+        rules: ruleRes.data || [],
+        expenses: txRes.data || []
+      }));
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   useEffect(() => {
     if (activeBusinessId) {
@@ -134,7 +197,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) {
-      setFinData({ expenses: [], budgets: [], accounts: [], investments: [] });
+      setFinData({ expenses: [], budgets: [], accounts: [], investments: [], rules: [] });
       setUserRole(null);
       setMenuAccess(null);
       setBusinesses([]);
@@ -191,76 +254,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     fetchUserConfig();
 
-    // Stream Businesses
-    const qBiz = query(collection(db, 'users', user.uid, 'businesses'));
-    const unsubBiz = onSnapshot(qBiz, (s) => {
-      const bizs = s.docs.map(d => ({ id: d.id, ...d.data() })) as Business[];
-      setBusinesses(bizs);
-      if (bizs.length > 0 && (!activeBusinessId || !bizs.find(b => b.id === activeBusinessId))) {
-        setActiveBusinessId(bizs[0].id);
-      } else if (bizs.length === 0) {
-        setActiveBusinessId(null);
+    // Fetch Businesses via API instead of Firestore Stream
+    const fetchBusinesses = async () => {
+      try {
+        const res = await businessApi.list();
+        const bizs = (res.data || []) as Business[];
+        setBusinesses(bizs);
+        
+        if (bizs.length > 0) {
+          const currentActive = bizs.find(b => b.id === activeBusinessId);
+          if (!currentActive) {
+            const defaultBiz = bizs.find(b => b.isDefault);
+            setActiveBusinessId(defaultBiz ? defaultBiz.id : bizs[0].id);
+          }
+        } else {
+          setActiveBusinessId(null);
+        }
+      } catch (err) {
+        console.error("Error fetching businesses:", err);
+        setBusinesses([]);
       }
-    });
-
-    return () => {
-      unsubBiz();
     };
+    fetchBusinesses();
+
+    return () => {};
   }, [user]);
 
   useEffect(() => {
     if (!user || !activeBusinessId) {
-      setFinData({ expenses: [], budgets: [], accounts: [], investments: [] });
+      setFinData({ expenses: [], budgets: [], accounts: [], investments: [], rules: [] });
       return;
     }
 
-    // Stream user data for ACTIVE BUSINESS
-    const qExpenses = query(
-      collection(db, 'users', user.uid, 'expenses'),
-      where('businessId', '==', activeBusinessId)
-    );
-    const qBudgets = query(
-      collection(db, 'users', user.uid, 'budgets'),
-      where('businessId', '==', activeBusinessId)
-    );
-    const qAccounts = query(
-      collection(db, 'users', user.uid, 'accounts'),
-      where('businessId', '==', activeBusinessId)
-    );
-    const qInvestments = query(
-      collection(db, 'users', user.uid, 'investments'),
-      where('businessId', '==', activeBusinessId)
-    );
-
-    const unsubExpenses = onSnapshot(qExpenses, (s) => 
-      setFinData(prev => ({ ...prev, expenses: s.docs.map(d => ({ id: d.id, ...d.data() })) }))
-    );
-    const unsubBudgets = onSnapshot(qBudgets, (s) => 
-      setFinData(prev => ({ ...prev, budgets: s.docs.map(d => ({ id: d.id, ...d.data() })) }))
-    );
-    const unsubAccounts = onSnapshot(qAccounts, (s) => 
-      setFinData(prev => ({ ...prev, accounts: s.docs.map(d => ({ id: d.id, ...d.data() })) }))
-    );
-    const unsubInvestments = onSnapshot(qInvestments, (s) => 
-      setFinData(prev => ({ ...prev, investments: s.docs.map(d => ({ id: d.id, ...d.data() })) }))
-    );
-
-    return () => {
-      unsubExpenses();
-      unsubBudgets();
-      unsubAccounts();
-      unsubInvestments();
-    };
+    refreshData();
   }, [user, activeBusinessId]);
 
   const updateBusiness = async (id: string, data: Partial<Business>) => {
     if (!user) return;
     try {
-      const bizRef = doc(db, 'users', user.uid, 'businesses', id);
-      await updateDoc(bizRef, {
-        ...data,
-        updatedAt: new Date().toISOString()
-      });
+      await businessApi.update(id, data);
       await logEvent({
         userId: user.uid,
         userEmail: user.email || 'unknown',
@@ -270,6 +302,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         resourceId: id,
         details: `Updated business properties: ${Object.keys(data).join(', ')}`
       });
+      // Logic: Manual refresh after write since we don't have streams anymore
+      const res = await businessApi.list();
+      setBusinesses(res.data || []);
     } catch (err) {
       console.error("Error updating business:", err);
       throw err;
@@ -279,33 +314,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteBusiness = async (id: string) => {
     if (!user) return;
     try {
-      // 1. Delete all associated data first (Expenses, Budgets, Accounts, Investments)
-      // Note: In production, you'd use a Cloud Function or a batch for safety.
-      // For this app, we'll try to batch what we can or just delete the business doc.
-      // To be safe and simple for this environment:
-      
-      const batch = writeBatch(db);
-      
-      // We don't want to delete EVERYTHING if there are thousands of records in a simple batch (limit 500)
-      // but for most users, we can attempt a basic cleanup of the business doc at minimum.
-      
-      const bizRef = doc(db, 'users', user.uid, 'businesses', id);
-      batch.delete(bizRef);
-      await batch.commit();
+      await businessApi.delete(id);
 
       await logEvent({
         userId: user.uid,
         userEmail: user.email || 'unknown',
         userName: user.displayName || 'Delight User',
-        action: 'DELETE',
+        action: 'SOFT_DELETE',
         resourceType: 'business',
         resourceId: id,
-        details: `Deleted business entity`
+        details: `Deleted business entity via API`
       });
       
+      const res = await businessApi.list();
+      const bizs = res.data || [];
+      setBusinesses(bizs);
+
       if (activeBusinessId === id) {
-        const remaining = businesses.filter(b => b.id !== id);
-        setActiveBusinessId(remaining.length > 0 ? remaining[0].id : null);
+        setActiveBusinessId(bizs.length > 0 ? bizs[0].id : null);
       }
     } catch (err) {
       console.error("Error deleting business:", err);
@@ -328,6 +354,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDateFilter,
       activeTab,
       setActiveTab,
+      refreshData,
       finData 
     }}>
       {children}

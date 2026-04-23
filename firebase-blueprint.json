@@ -2,19 +2,22 @@
   "entities": {
     "Expense": {
       "title": "Expense",
-      "description": "An individual expense record, stored with encrypted description and sensitive details.",
+      "description": "An individual expense record.",
       "type": "object",
       "properties": {
         "amount": { "type": "number" },
+        "originalAmount": { "type": "number" },
         "category": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" },
+        "reference": { "type": "string" },
         "accountId": { "type": "string" },
-        "encryptedData": { "type": "string", "description": "AES-256 encrypted string containing description and other metadata." },
+        "businessId": { "type": "string" },
         "userId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["amount", "category", "date", "accountId", "encryptedData", "userId", "createdAt"]
+      "required": ["amount", "category", "date", "accountId", "userId", "createdAt", "businessId"]
     },
     "Budget": {
       "title": "Budget",
@@ -24,13 +27,15 @@
         "category": { "type": "string" },
         "amount": { "type": "number" },
         "type": { "type": "string", "enum": ["Income", "Expense", "Asset", "Liability"] },
+        "gstRate": { "type": "number" },
         "month": { "type": "number" },
         "year": { "type": "number" },
+        "businessId": { "type": "string" },
         "userId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["category", "amount", "month", "year", "userId", "createdAt"]
+      "required": ["category", "amount", "month", "year", "userId", "createdAt", "businessId"]
     },
     "Account": {
       "title": "Account",
@@ -67,16 +72,13 @@
       "type": "object",
       "properties": {
         "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["personal", "business"] },
-        "currency": { "type": "string" },
-        "timezone": { "type": "string" },
-        "fiscalYearStart": { "type": "string", "description": "Accounting year start day and month (MM-DD format, e.g., 01-01)" },
-        "fiscalYearEnd": { "type": "string", "description": "Accounting year end day and month (MM-DD format, e.g., 12-31)" },
+        "isDefault": { "type": "boolean" },
+        "settingsJson": { "type": "string" },
         "userId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "type", "currency", "timezone", "userId", "createdAt"]
+      "required": ["name", "settingsJson", "userId", "createdAt"]
     },
     "UserConfig": {
       "title": "User Config",
