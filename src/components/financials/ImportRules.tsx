@@ -63,10 +63,10 @@ interface ImportRule {
   order: number;
 }
 
-function DraggableCategory({ category }: { category: string }) {
+function DraggableName({ name }: { name: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `cat-${category}`,
-    data: { type: 'category', value: category }
+    id: `cat-${name}`,
+    data: { type: 'category', value: name }
   });
 
   const style = transform ? {
@@ -86,7 +86,7 @@ function DraggableCategory({ category }: { category: string }) {
     >
       <div className="flex items-center gap-2">
         <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-        {category}
+        {name}
       </div>
       <GripVertical size={14} className="text-slate-300 group-hover:text-indigo-400 transition-colors" />
     </div>
@@ -195,7 +195,7 @@ function SortableRuleItem({
                 {rule.actions.map((a, i) => (
                   <div key={i} className="flex items-center gap-2 px-3 py-1 bg-indigo-50 rounded-lg text-[10px] font-bold text-indigo-600">
                     <ArrowRight size={12} className="text-indigo-300" />
-                    <span className="text-indigo-400 font-medium">{a.type === 'setCategory' ? 'Set Category' : 'Rewrite Desc'}</span>
+                    <span className="text-indigo-400 font-medium">{a.type === 'setCategory' ? 'Set Name' : 'Rewrite Desc'}</span>
                     <span className="text-indigo-700 capitalize">{a.value}</span>
                   </div>
                 ))}
@@ -403,15 +403,15 @@ export default function ImportRules({ isModal = false }: { isModal?: boolean }) 
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                    <Tags size={14} className="text-indigo-500" />
-                   Smart Categories
+                   Smart Names
                 </h3>
                 <div className="space-y-3">
                   <p className="text-[11px] text-slate-500 leading-relaxed mb-4">
-                    Drag a category onto the workspace to instantly set a target outcome.
+                    Drag a name onto the workspace to instantly set a target outcome.
                   </p>
                   <div className="flex flex-col gap-2 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                     {categories.map((cat, i) => (
-                      <DraggableCategory key={i} category={cat} />
+                      <DraggableName key={i} name={cat} />
                     ))}
                   </div>
                 </div>
@@ -669,7 +669,7 @@ export default function ImportRules({ isModal = false }: { isModal?: boolean }) 
                                 }}
                                 className="bg-white px-4 py-2 rounded-xl text-xs font-bold text-indigo-700 border-none shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                               >
-                                <option value="setCategory">Assign Category</option>
+                                <option value="setCategory">Assign Name</option>
                                 <option value="setDescription">Rewrite Description</option>
                               </select>
                               {a.type === 'setCategory' ? (
@@ -682,7 +682,7 @@ export default function ImportRules({ isModal = false }: { isModal?: boolean }) 
                                   }}
                                   className="flex-1 bg-white px-4 py-2 rounded-xl text-xs font-bold text-slate-900 border-none shadow-sm focus:ring-2 focus:ring-[#86BC24] outline-none"
                                 >
-                                  <option value="">Select Category...</option>
+                                  <option value="">Select Name...</option>
                                   {categories.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                               ) : (

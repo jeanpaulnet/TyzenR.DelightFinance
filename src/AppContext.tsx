@@ -18,6 +18,7 @@ export interface BusinessSettings {
   timezone: string;
   isBudgetingEnabled: boolean;
   isGSTEnabled: boolean;
+  type?: 'Personal' | 'Business';
   fiscalYearStart?: string;
   fiscalYearEnd?: string;
 }
@@ -41,7 +42,8 @@ export function getBusinessSettings(business: Business): BusinessSettings {
       currency: 'USD',
       timezone: 'UTC',
       isBudgetingEnabled: true,
-      isGSTEnabled: false
+      isGSTEnabled: false,
+      type: 'Personal'
     };
   }
 }
@@ -93,16 +95,6 @@ const ADMIN_MENU_ACCESS: MenuAccess = {
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const DEFAULT_CATEGORIES = [
-  { category: 'Housing', amount: 1500 },
-  { category: 'Food & Dining', amount: 600 },
-  { category: 'Transportation', amount: 300 },
-  { category: 'Entertainment', amount: 200 },
-  { category: 'Utility', amount: 250 },
-  { category: 'Shopping', amount: 300 },
-  { category: 'Health', amount: 150 },
-];
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

@@ -7,23 +7,6 @@ import { cn } from '../../lib/utils';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
 
-const DEFAULT_CATEGORIES = [
-  { category: 'Housing', amount: 0, type: 'Expense' },
-  { category: 'Food', amount: 0, type: 'Expense' },
-  { category: 'Health', amount: 0, type: 'Expense' },
-  { category: 'Transportation', amount: 0, type: 'Expense' },
-  { category: 'Utility', amount: 0, type: 'Expense' },
-  { category: 'Entertainment', amount: 0, type: 'Expense' },
-  { category: 'Miscellaneous', amount: 0, type: 'Expense' },
-  { category: 'Travel', amount: 0, type: 'Expense' },
-  { category: 'Software & Tools', amount: 0, type: 'Expense' },
-  { category: 'Marketing', amount: 0, type: 'Expense' },
-  { category: 'Salary Income', amount: 0, type: 'Income' },
-  { category: 'Business Income', amount: 0, type: 'Income' },
-  { category: 'Other Income', amount: 0, type: 'Income' },
-  { category: 'Other Expense', amount: 0, type: 'Expense' },
-];
-
 export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
   const { user, businesses, refreshData, setActiveTab, setActiveBusinessId } = useApp();
   const [loading, setLoading] = useState(false);
@@ -32,7 +15,8 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
     currency: 'USD',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     isBudgetingEnabled: true,
-    isGSTEnabled: false
+    isGSTEnabled: false,
+    type: 'Personal' as 'Personal' | 'Business'
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +32,8 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
           currency: formData.currency,
           timezone: formData.timezone,
           isBudgetingEnabled: formData.isBudgetingEnabled,
-          isGstEnabled: formData.isGSTEnabled
+          isGstEnabled: formData.isGSTEnabled,
+          type: formData.type
         }
       });
       const bizId = bizRes.data.id;
@@ -56,51 +41,6 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
       // Set the active business ID immediately so subsequent refreshes work
       setActiveBusinessId(bizId);
 
-      // Initialize default budgets for the new business
-      const now = new Date();
-      const categoryIdMap: Record<string, string> = {};
-      
-      for (const cat of DEFAULT_CATEGORIES) {
-        const catRes = await categoryApi.create(bizId, {
-          name: cat.category,
-          type: cat.type,
-          month: now.getMonth() + 1,
-          year: now.getFullYear()
-        });
-        if (catRes.data && catRes.data.id) {
-          categoryIdMap[cat.category] = catRes.data.id;
-        }
-      }
-
-      // Initialize default transactions for the new business
-      // Using 'Business Income' or 'Other Expense' as fallback if 'Business' name not found
-      const businessCatId = categoryIdMap['Business Income'] || Object.values(categoryIdMap)[0];
-      
-      // Transaction 1: Current Month
-      await transactionApi.create({
-        amount: 85.50,
-        deductions: 0,
-        finalAmount: 85.50,
-        categoryId: businessCatId,
-        description: 'Monthly Software Subscription',
-        date: now.toISOString(),
-        notes: 'Initial setup transaction',
-        businessId: bizId
-      });
-
-      // Transaction 2: Past Month
-      const pastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
-      await transactionApi.create({
-        amount: 450.00,
-        deductions: 0,
-        finalAmount: 450.00,
-        categoryId: businessCatId,
-        description: 'Office Consulting Fee',
-        date: pastMonth.toISOString(),
-        notes: 'Legacy cleanup record',
-        businessId: bizId
-      });
-      
       await refreshData();
       setActiveTab('dashboard');
       if (onClose) {
@@ -184,75 +124,114 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
              </button>
            )}
            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <Building2 size={12} />
-                    Business Name
-                 </label>
-                 <input 
-                    required
-                    value={formData.name}
-                    onChange={e => setFormData({...formData, name: e.target.value})}
-                    placeholder="e.g. Acme Corporation LLC"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all"
-                 />
-              </div>
+               <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                     <Building2 size={12} />
+                     {formData.type === 'Business' ? 'Business Name' : 'Profile Name'}
+                  </label>
+                  <input 
+                     required
+                     value={formData.name}
+                     onChange={e => setFormData({...formData, name: e.target.value})}
+                     placeholder={formData.type === 'Business' ? "e.g. Acme Corporation LLC" : "e.g. Personal Finances"}
+                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all"
+                  />
+               </div>
 
-              <div className="space-y-4">
-                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <TrendingUp size={12} />
-                    Features
-                 </label>
-                 <div className="space-y-3">
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <input 
-                        type="checkbox"
-                        checked={formData.isBudgetingEnabled}
-                        onChange={e => setFormData({...formData, isBudgetingEnabled: e.target.checked})}
-                        className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
-                      />
-                      <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
-                        Budgeting
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <input 
-                        type="checkbox"
-                        checked={formData.isGSTEnabled}
-                        onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
-                        className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
-                      />
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
-                          GST
-                        </span>
-                        <div className="group/help relative">
-                          <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
-                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20 text-center">
-                            If GST, Income category will have GST % field configurable & will be adjusted in Transactions
-                            <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
-                          </div>
-                        </div>
-                      </div>
-                    </label>
-                 </div>
-              </div>
+               <div className="space-y-4">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                     <User size={12} />
+                     Business Type
+                  </label>
+                  <div className="flex gap-3">
+                     {[
+                        { id: 'Personal', icon: User },
+                        { id: 'Business', icon: Building2 }
+                     ].map((t) => (
+                        <button
+                           key={t.id}
+                           type="button"
+                           onClick={() => setFormData({...formData, type: t.id as any})}
+                           className={cn(
+                              "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border text-[11px] font-bold transition-all uppercase tracking-wider",
+                              formData.type === t.id 
+                                 ? "bg-[#86BC24]/10 border-[#86BC24] text-[#86BC24] shadow-sm shadow-green-500/10" 
+                                 : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+                           )}
+                        >
+                           <t.icon size={14} />
+                           {t.id}
+                        </button>
+                     ))}
+                  </div>
+               </div>
 
-              <div className="pt-6">
-                 <button 
-                  disabled={loading}
-                  className="w-full bg-[#86BC24] text-white rounded-xl py-4 font-bold text-sm uppercase tracking-widest shadow-xl shadow-green-500/20 hover:bg-[#75A51F] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                 >
-                    {loading ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <>
-                        Create
-                        <ChevronRight size={18} />
-                      </>
-                    )}
-                 </button>
-              </div>
+               <div className="space-y-4">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                     <TrendingUp size={12} />
+                     Features
+                  </label>
+                  <div className="space-y-3">
+                     <label className="flex items-center gap-3 cursor-pointer group">
+                       <input 
+                         type="checkbox"
+                         checked={formData.isBudgetingEnabled}
+                         onChange={e => setFormData({...formData, isBudgetingEnabled: e.target.checked})}
+                         className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
+                       />
+                       <div className="flex items-center gap-2">
+                         <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                           Budgeting
+                         </span>
+                         <div className="group/help relative">
+                           <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
+                           <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20 text-center">
+                             Set budget per month on categories & check transactions
+                             <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
+                           </div>
+                         </div>
+                       </div>
+                     </label>
+                     {formData.type === 'Business' && (
+                       <label className="flex items-center gap-3 cursor-pointer group">
+                         <input 
+                           type="checkbox"
+                           checked={formData.isGSTEnabled}
+                           onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
+                           className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
+                         />
+                         <div className="flex items-center gap-2">
+                           <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                             GST
+                           </span>
+                           <div className="group/help relative">
+                             <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
+                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20 text-center">
+                               If GST, Income category will have GST % field configurable & will be adjusted in Transactions
+                               <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
+                             </div>
+                           </div>
+                         </div>
+                       </label>
+                     )}
+                  </div>
+               </div>
+
+               <div className="pt-6">
+                  <button 
+                   disabled={loading}
+                   className="w-full bg-[#86BC24] text-white rounded-xl py-4 font-bold text-sm uppercase tracking-widest shadow-xl shadow-green-500/20 hover:bg-[#75A51F] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                     {loading ? (
+                       <Loader2 size={18} className="animate-spin" />
+                     ) : (
+                       <>
+                         Create
+                         <ChevronRight size={18} />
+                       </>
+                     )}
+                  </button>
+               </div>
            </form>
         </div>
       </motion.div>

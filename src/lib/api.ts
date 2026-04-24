@@ -14,9 +14,15 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const user = auth.currentUser;
   if (user) {
+    // Current headers
     config.headers['X-User-Email'] = user.email || '';
     config.headers['X-User-Id'] = user.uid;
     config.headers['X-User-Name'] = user.displayName || 'Delight User';
+    
+    // Specifically requested headers
+    config.headers['UserId'] = user.uid;
+    config.headers['UserName'] = user.displayName || 'Delight User';
+    config.headers['UserEmail'] = user.email || '';
   }
   return config;
 });
@@ -69,6 +75,7 @@ export const categoryApi = {
     await api.post(`category/${businessId}`, data),
   update: async (id: string, data: any) => await api.put(`category/${id}`, data),
   delete: async (id: string) => await api.delete(`category/${id}`),
+  list: async (businessId: string) => await api.get(`categories/${businessId}`),
 };
 
 export const businessApi = {
@@ -77,7 +84,7 @@ export const businessApi = {
   list: async () => await api.get('businesses'),
   update: async (id: string, data: any) => await api.put(`business/${id}`, data),
   delete: async (id: string) => await api.delete(`business/${id}`),
-  listCategories: async (businessId: string) => await api.get(`business/${businessId}/categories`),
+  listCategories: async (businessId: string) => await api.get(`categories/${businessId}`),
 };
 
 export const transactionApi = {

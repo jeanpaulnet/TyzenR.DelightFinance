@@ -55,7 +55,7 @@ function MainApp() {
   const allTabs = useMemo(() => [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: !!menuAccess?.dashboard },
     { id: 'transactions', label: 'Transactions', icon: Activity, visible: !!menuAccess?.transactions },
-    { id: 'budgets', label: 'Categories', icon: Wallet, visible: !!menuAccess?.budgets },
+    { id: 'budgets', label: 'Names', icon: Wallet, visible: !!menuAccess?.budgets },
     { id: 'rules', label: 'Rules', icon: Zap, visible: !!menuAccess?.rules },
     { id: 'ai', label: 'AI Chat', icon: MessageSquare, visible: !!menuAccess?.ai },
   ], [menuAccess]);

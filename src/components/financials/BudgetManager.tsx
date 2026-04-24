@@ -285,8 +285,8 @@ export default function BudgetManager() {
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold text-[#1E293B] tracking-tight">Categories</h1>
-          <p className="text-[#64748B] text-sm italic">Define categories & monthly budgets</p>
+          <h1 className="text-3xl font-bold text-[#1E293B] tracking-tight">Names</h1>
+          <p className="text-[#64748B] text-sm italic">Define names & monthly budgets</p>
         </div>
         
         <div className="flex items-center gap-4 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
@@ -321,7 +321,7 @@ export default function BudgetManager() {
             className="btn-primary flex items-center gap-2 h-10 px-4"
           >
             <Plus size={18} />
-            Add Category
+            Add Name
           </button>
         )}
       </div>
@@ -524,14 +524,14 @@ export default function BudgetManager() {
                         <button 
                           onClick={() => startEdit(stat.data)} 
                           className="p-1 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
-                          title="Edit Category"
+                          title="Edit Name"
                         >
                             <Edit2 size={14} />
                         </button>
                         <button 
                           onClick={() => setDeleteConfirm({ id: stat.data.id, category: stat.name, isActive: true })} 
                           className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
-                          title="Delete Category"
+                          title="Delete Name"
                         >
                             <Trash2 size={14} />
                         </button>
@@ -541,7 +541,7 @@ export default function BudgetManager() {
                         <button 
                           onClick={() => setDeleteConfirm({ id: null, category: stat.name, isActive: false })}
                           className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
-                          title="Purge Category"
+                          title="Purge Name"
                         >
                           <Trash2 size={12} />
                         </button>
@@ -650,7 +650,7 @@ export default function BudgetManager() {
                   <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Trash2 size={24} />
                   </div>
-                  <h3 className="text-xl font-bold text-slate-900 leading-tight">Delete Category?</h3>
+                  <h3 className="text-xl font-bold text-slate-900 leading-tight">Delete Name?</h3>
                   <p className="text-sm text-slate-500">How should we handle "{deleteConfirm.category}" and its data?</p>
                 </div>
 
@@ -683,7 +683,7 @@ export default function BudgetManager() {
                         />
                         <div className="text-xs">
                           <p className="font-bold text-red-600">Delete Associated Transactions</p>
-                          <p className="text-slate-500 text-[10px]">All expenses in this category will be PERMANENTLY deleted</p>
+                          <p className="text-slate-500 text-[10px]">All expenses in this name will be PERMANENTLY deleted</p>
                         </div>
                       </label>
 
@@ -696,7 +696,7 @@ export default function BudgetManager() {
                           className="w-4 h-4 text-blue-600 focus:ring-blue-600"
                         />
                         <div className="text-xs flex-1">
-                          <p className="font-bold text-blue-600">Reassign to another category</p>
+                          <p className="font-bold text-blue-600">Reassign to another name</p>
                           {transactionAction === 'reassign' && (
                             <select 
                               value={targetCategory}
@@ -745,7 +745,7 @@ export default function BudgetManager() {
               <Wallet size={32} />
             </div>
             <div>
-              <p className="text-slate-900 font-bold">No categories for {selectedYear}</p>
+              <p className="text-slate-900 font-bold">No names for {selectedYear}</p>
               <p className="text-slate-500 text-sm">Create budgets for this year or copy from a previous period.</p>
             </div>
             {recentYearWithData && recentYearWithData !== selectedYear && (

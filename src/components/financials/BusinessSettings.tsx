@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, getBusinessSettings } from '../../AppContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Building2, Coins, Clock, Trash2, Save, AlertTriangle, Loader2, CheckCircle2, HelpCircle } from 'lucide-react';
+import { Building2, Coins, Clock, Trash2, Save, AlertTriangle, Loader2, CheckCircle2, HelpCircle, User } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const CURRENCIES = [
@@ -38,6 +38,7 @@ export default function BusinessSettings() {
     isBudgetingEnabled: boolean;
     isGSTEnabled: boolean;
     isDefault: boolean;
+    type: 'Personal' | 'Business';
   } | null>(null);
 
   const activeBiz = businesses.find(b => b.id === activeBusinessId);
@@ -54,6 +55,7 @@ export default function BusinessSettings() {
         isBudgetingEnabled: settings.isBudgetingEnabled ?? true,
         isGSTEnabled: settings.isGSTEnabled ?? false,
         isDefault: activeBiz.isDefault ?? false,
+        type: settings.type || 'Personal',
       });
     }
   }, [activeBiz]);
@@ -123,13 +125,42 @@ export default function BusinessSettings() {
           >
             <form onSubmit={handleUpdate} className="p-8 space-y-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Business Name</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
+                  {formData.type === 'Business' ? 'Business Name' : 'Profile Name'}
+                </label>
                 <input 
                   required
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all"
                 />
+              </div>
+
+              <div className="space-y-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                  <User size={12} /> Business Type
+                </label>
+                <div className="flex gap-3">
+                  {[
+                    { id: 'Personal', icon: User },
+                    { id: 'Business', icon: Building2 }
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setFormData({...formData, type: t.id as any})}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border text-[11px] font-bold transition-all uppercase tracking-wider",
+                        formData.type === t.id 
+                          ? "bg-[#86BC24]/10 border-[#86BC24] text-[#86BC24] shadow-sm shadow-green-500/10" 
+                          : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+                      )}
+                    >
+                      <t.icon size={14} />
+                      {t.id}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -142,30 +173,41 @@ export default function BusinessSettings() {
                       onChange={e => setFormData({...formData, isBudgetingEnabled: e.target.checked})}
                       className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
                     />
-                    <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
-                      Budgeting (Category targets & limits)
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer group">
-                    <input 
-                      type="checkbox"
-                      checked={formData.isGSTEnabled}
-                      onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
-                      className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
-                    />
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
-                        GST
+                        Budgeting
                       </span>
                       <div className="group/help relative">
                         <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
                         <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
-                          If GST, Income category will have GST % field configurable & will be adjusted in Transactions
+                          Set budget per month on categories & check transactions
                           <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
                         </div>
                       </div>
                     </div>
                   </label>
+                  {formData.type === 'Business' && (
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input 
+                        type="checkbox"
+                        checked={formData.isGSTEnabled}
+                        onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
+                        className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
+                      />
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">
+                          GST
+                        </span>
+                        <div className="group/help relative">
+                          <HelpCircle size={14} className="text-slate-400 group-hover/help:text-[#86BC24] transition-colors" />
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover/help:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
+                            If GST, Income category will have GST % field configurable & will be adjusted in Transactions
+                            <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-900" />
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  )}
                   {businesses.length > 1 && (
                     <label className="flex items-center gap-3 cursor-pointer group">
                       <input 

@@ -465,7 +465,7 @@ export default function Transactions() {
                  </>
               )}
                <div className="space-y-2">
-                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
+                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Name</label>
                  <select 
                    required value={formData.categoryId}
                    onChange={e => handleCategoryChange(e.target.value)}
@@ -542,7 +542,7 @@ export default function Transactions() {
                   onClick={() => toggleSort('category')}
                 >
                   <div className="flex items-center gap-1">
-                    Category
+                    Name
                     <ArrowUpDown size={12} className={cn(sortField === 'category' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
