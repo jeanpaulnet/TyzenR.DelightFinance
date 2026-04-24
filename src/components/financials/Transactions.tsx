@@ -163,7 +163,7 @@ export default function Transactions() {
     if (!user || !activeBusinessId) return;
     
     // Auto-populate GST rate from budget if GST is enabled globally
-    const gstRate = settings?.isGSTEnabled ? (parseFloat(formData.gstRate) || 0) : 0;
+    const gstRate = settings?.isGstEnabled ? (parseFloat(formData.gstRate) || 0) : 0;
     
     const amount = parseFloat(formData.amount);
     let finalAmount = amount;
@@ -211,7 +211,7 @@ export default function Transactions() {
     if (!user || !editingId) return;
     
     // Auto-populate GST rate from budget if GST is enabled globally
-    const gstRate = settings?.isGSTEnabled ? (parseFloat(formData.gstRate) || 0) : 0;
+    const gstRate = settings?.isGstEnabled ? (parseFloat(formData.gstRate) || 0) : 0;
     
     const amount = parseFloat(formData.amount);
     let finalAmount = amount;
@@ -319,7 +319,7 @@ export default function Transactions() {
   };
 
   useEffect(() => {
-    if (settings?.isGSTEnabled) {
+    if (settings?.isGstEnabled) {
       const amt = parseFloat(formData.amount) || 0;
       const rate = parseFloat(formData.gstRate) || 0;
       
@@ -327,12 +327,12 @@ export default function Transactions() {
       const net = amt / (1 + (rate / 100));
       setFormData(prev => ({ ...prev, actualAmount: net.toFixed(2) }));
     }
-  }, [formData.amount, formData.gstRate, settings?.isGSTEnabled]);
+  }, [formData.amount, formData.gstRate, settings?.isGstEnabled]);
 
   const handleCategoryChange = (catId: string) => {
     const categoryInfo = finData.budgets.find(b => b.id === catId);
     // Auto-populate GST rate from budget if GST is enabled globally
-    const newGstRate = settings?.isGSTEnabled ? (categoryInfo?.gstRate || 0) : 0;
+    const newGstRate = settings?.isGstEnabled ? (categoryInfo?.gstRate || 0) : 0;
     setFormData(prev => ({ 
       ...prev, 
       categoryId: catId,
@@ -425,7 +425,7 @@ export default function Transactions() {
                   />
                 </div>
               </div>
-              {settings?.isGSTEnabled && (
+              {settings?.isGstEnabled && (
                  <>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST %</label>
@@ -465,7 +465,7 @@ export default function Transactions() {
                  </>
               )}
                <div className="space-y-2">
-                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Name</label>
+                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
                  <select 
                    required value={formData.categoryId}
                    onChange={e => handleCategoryChange(e.target.value)}
@@ -485,7 +485,7 @@ export default function Transactions() {
                         value={cat.id}
                         style={{ color: foreColor, fontWeight: 'bold' }}
                       >
-                        {cat.category} ({type})
+                        {cat.name} ({type})
                       </option>
                     );
                   })}
@@ -542,7 +542,7 @@ export default function Transactions() {
                   onClick={() => toggleSort('category')}
                 >
                   <div className="flex items-center gap-1">
-                    Name
+                    Category
                     <ArrowUpDown size={12} className={cn(sortField === 'category' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
@@ -551,11 +551,11 @@ export default function Transactions() {
                   onClick={() => toggleSort('amount')}
                 >
                   <div className="flex items-center gap-1">
-                    {settings?.isGSTEnabled ? 'Total Amount' : 'Amount'}
+                    {settings?.isGstEnabled ? 'Total Amount' : 'Amount'}
                     <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-slate-300")} />
                   </div>
                 </th>
-                {settings?.isGSTEnabled && (
+                {settings?.isGstEnabled && (
                   <>
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Deductions</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Final Amount</th>
@@ -598,7 +598,7 @@ export default function Transactions() {
                       {formatCurrency(exp.amount, currencyCode)}
                     </span>
                   </td>
-                  {settings?.isGSTEnabled && (
+                  {settings?.isGstEnabled && (
                     <>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-bold text-red-500 leading-none">
@@ -790,7 +790,7 @@ export default function Transactions() {
                       />
                     </div>
                   </div>
-                  {settings?.isGSTEnabled && (
+                  {settings?.isGstEnabled && (
                     <>
                       <div className="space-y-2">
                         <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST %</label>

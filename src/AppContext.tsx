@@ -17,7 +17,7 @@ export interface BusinessSettings {
   currency: string;
   timezone: string;
   isBudgetingEnabled: boolean;
-  isGSTEnabled: boolean;
+  isGstEnabled: boolean;
   type?: 'Personal' | 'Business';
   fiscalYearStart?: string;
   fiscalYearEnd?: string;
@@ -27,7 +27,7 @@ export interface Business {
   id: string;
   name: string;
   isDefault?: boolean;
-  settingsJson: string; // Stored as JSON string
+  businessSettingsJson: string; // Stored as JSON string
   userId: string;
   createdAt: string;
   updatedAt: string;
@@ -36,13 +36,22 @@ export interface Business {
 
 export function getBusinessSettings(business: Business): BusinessSettings {
   try {
-    return JSON.parse(business.settingsJson);
+    const s = JSON.parse(business.businessSettingsJson);
+    return {
+      currency: s.currency || s.Currency || 'USD',
+      timezone: s.timezone || s.Timezone || 'UTC',
+      isBudgetingEnabled: s.isBudgetingEnabled ?? s.IsBudgetingEnabled ?? true,
+      isGstEnabled: s.isGstEnabled ?? s.IsGstEnabled ?? false,
+      type: s.type || s.Type || 'Personal',
+      fiscalYearStart: s.fiscalYearStart || s.FiscalYearStart || '01-01',
+      fiscalYearEnd: s.fiscalYearEnd || s.FiscalYearEnd || '12-31'
+    };
   } catch (e) {
     return {
       currency: 'USD',
       timezone: 'UTC',
       isBudgetingEnabled: true,
-      isGSTEnabled: false,
+      isGstEnabled: false,
       type: 'Personal'
     };
   }
@@ -131,7 +140,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       // 1. Refresh Business list first (critical if we just created one)
       const businessesRes = await businessApi.list().catch(() => ({ data: [] }));
-      const currentBusinesses = businessesRes.data || [];
+      const rawBizs = (businessesRes.data || []) as any[];
+      const currentBusinesses = rawBizs.map(b => ({
+        id: b.id || b.Id,
+        name: b.name || b.Name,
+        isDefault: b.isDefault || b.IsDefault,
+        businessSettingsJson: b.businessSettingsJson || b.BusinessSettingsJson,
+        userId: b.userId || b.UserId,
+        createdAt: b.createdAt || b.CreatedAt,
+        updatedAt: b.updatedAt || b.UpdatedAt
+      }));
       setBusinesses(currentBusinesses);
 
       // If no active business but we have businesses, pick one (usually happens after first creation)
@@ -153,7 +171,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       setFinData(prev => ({
         ...prev,
-        budgets: catRes.data || [],
+        budgets: (catRes.data || []).map((b: any) => ({
+          ...b,
+          name: b.name || b.Name || b.category || b.CategoryName,
+          category: b.name || b.Name || b.category || b.CategoryName // Keep category for back-compat if needed during transition
+        })),
         rules: ruleRes.data || [],
         expenses: txRes.data || []
       }));
@@ -250,7 +272,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const fetchBusinesses = async () => {
       try {
         const res = await businessApi.list();
-        const bizs = (res.data || []) as Business[];
+        const rawBizs = (res.data || []) as any[];
+        const bizs = rawBizs.map(b => ({
+          id: b.id || b.Id,
+          name: b.name || b.Name,
+          isDefault: b.isDefault || b.IsDefault,
+          businessSettingsJson: b.businessSettingsJson || b.BusinessSettingsJson,
+          userId: b.userId || b.UserId,
+          createdAt: b.createdAt || b.CreatedAt,
+          updatedAt: b.updatedAt || b.UpdatedAt
+        }));
         setBusinesses(bizs);
         
         if (bizs.length > 0) {
@@ -296,7 +327,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       // Logic: Manual refresh after write since we don't have streams anymore
       const res = await businessApi.list();
-      setBusinesses(res.data || []);
+      const rawBizs = (res.data || []) as any[];
+      const bizs = rawBizs.map(b => ({
+        id: b.id || b.Id,
+        name: b.name || b.Name,
+        isDefault: b.isDefault || b.IsDefault,
+        businessSettingsJson: b.businessSettingsJson || b.BusinessSettingsJson,
+        userId: b.userId || b.UserId,
+        createdAt: b.createdAt || b.CreatedAt,
+        updatedAt: b.updatedAt || b.UpdatedAt
+      }));
+      setBusinesses(bizs);
     } catch (err) {
       console.error("Error updating business:", err);
       throw err;

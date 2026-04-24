@@ -68,8 +68,8 @@ export default function ExpenseUpload() {
   const categoryTypeMap = useMemo(() => {
     const map = new Map<string, string>();
     finData.budgets.forEach(b => {
-      if (b.category) {
-        map.set(b.category.toLowerCase().trim(), b.type || 'Expense');
+      if (b.name) {
+        map.set(b.name.toLowerCase().trim(), b.type || 'Expense');
       }
     });
     return map;
@@ -335,12 +335,12 @@ export default function ExpenseUpload() {
       let count = 0;
 
       // Track existing categories to avoid redundant lookups or creations
-      const existingCats = new Set(finData.budgets.map(b => (b.category || '').toLowerCase()));
+      const existingCats = new Set(finData.budgets.map(b => (b.name || '').toLowerCase()));
       const createdThisTurn = new Set<string>();
 
       for (const row of rowsToSave) {
         const catKey = (row.category || '').toLowerCase();
-        const categoryInfo = finData.budgets.find(b => (b.category || '').toLowerCase() === catKey);
+        const categoryInfo = finData.budgets.find(b => (b.name || '').toLowerCase() === catKey);
         
         // Auto-create category if it doesn't exist
         if (catKey && !existingCats.has(catKey) && !createdThisTurn.has(catKey)) {
@@ -356,7 +356,7 @@ export default function ExpenseUpload() {
 
         // Logic: Apply GST extraction for imported income
         const isIncome = (categoryInfo?.type === 'Income') || (row.type === 'Income');
-        const gstRate = (settings?.isGSTEnabled && isIncome) ? (categoryInfo?.gstRate || 0) : 0;
+        const gstRate = (settings?.isGstEnabled && isIncome) ? (categoryInfo?.gstRate || 0) : 0;
         
         const amount = row.amount;
         let finalAmount = amount;
@@ -597,7 +597,7 @@ export default function ExpenseUpload() {
                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</th>
                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Description</th>
                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ref</th>
-                             <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Name</th>
+                             <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</th>
                              {wasDualColumnAmount && (
                                <>
                                  <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Income (Src)</th>
@@ -661,8 +661,8 @@ export default function ExpenseUpload() {
                                      >
                                         <option value="">Select Category...</option>
                                         {finData.budgets.map(b => (
-                                          <option key={b.id} value={b.category} className="text-slate-900 bg-white">
-                                            {b.category}
+                                          <option key={b.id} value={b.name} className="text-slate-900 bg-white">
+                                            {b.name}
                                           </option>
                                         ))}
                                      </select>

@@ -182,7 +182,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="dashboard-card shadow-sm h-full flex flex-col">
           <div className="mb-6 shrink-0">
-            <p className="stat-label m-0 text-slate-900">Spending By Name</p>
+            <p className="stat-label m-0 text-slate-900">Spending By Category</p>
             <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">Expense distribution across categories</p>
           </div>
           <div className="flex-1 min-h-[350px]">

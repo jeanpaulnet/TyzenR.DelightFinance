@@ -36,7 +36,7 @@ export default function BusinessSettings() {
     fiscalYearStart: string;
     fiscalYearEnd: string;
     isBudgetingEnabled: boolean;
-    isGSTEnabled: boolean;
+    isGstEnabled: boolean;
     isDefault: boolean;
     type: 'Personal' | 'Business';
   } | null>(null);
@@ -53,7 +53,7 @@ export default function BusinessSettings() {
         fiscalYearStart: settings.fiscalYearStart || '01-01',
         fiscalYearEnd: settings.fiscalYearEnd || '12-31',
         isBudgetingEnabled: settings.isBudgetingEnabled ?? true,
-        isGSTEnabled: settings.isGSTEnabled ?? false,
+        isGstEnabled: settings.isGstEnabled ?? false,
         isDefault: activeBiz.isDefault ?? false,
         type: settings.type || 'Personal',
       });
@@ -67,21 +67,34 @@ export default function BusinessSettings() {
     if (loading) return;
     setLoading(true);
     try {
-      const { name, isDefault, ...settings } = formData;
+      const { name, isDefault, ...sv } = formData;
       
+      // Map to PascalCase for backend compatibility with BusinessSettingsDto
+      const settings = {
+        Currency: sv.currency,
+        Timezone: sv.timezone,
+        IsBudgetingEnabled: sv.isBudgetingEnabled,
+        IsGstEnabled: sv.isGstEnabled,
+        FiscalYearStart: sv.fiscalYearStart,
+        FiscalYearEnd: sv.fiscalYearEnd,
+        Type: sv.type
+      };
+
       // If setting this as default, unset others first (Logic: Client-side sequential batching)
       if (isDefault) {
         const others = businesses.filter(b => b.id !== activeBiz.id && b.isDefault);
         for (const other of others) {
-           await updateBusiness(other.id, { isDefault: false });
+           await updateBusiness(other.id, { IsDefault: false } as any);
         }
       }
 
       await updateBusiness(activeBiz.id, {
-        name,
-        isDefault,
-        settingsJson: JSON.stringify(settings)
-      });
+        Name: name,
+        IsDefault: isDefault,
+        Settings: settings 
+      } as any);
+      
+      setLoading(false);
       setActiveTab('dashboard'); // Switch to dashboard tab after save
     } catch (err) {
       console.error(err);
@@ -190,8 +203,8 @@ export default function BusinessSettings() {
                     <label className="flex items-center gap-3 cursor-pointer group">
                       <input 
                         type="checkbox"
-                        checked={formData.isGSTEnabled}
-                        onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
+                        checked={formData.isGstEnabled}
+                        onChange={e => setFormData({...formData, isGstEnabled: e.target.checked})}
                         className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
                       />
                       <div className="flex items-center gap-2">
@@ -291,6 +304,7 @@ export default function BusinessSettings() {
 
               <div className="pt-4 flex justify-end">
                 <button 
+                  type="submit"
                   disabled={loading}
                   className="bg-[#86BC24] text-white px-8 py-3 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-[#86BC24]/20 hover:bg-[#75A51F] transition-all flex items-center gap-2"
                 >

@@ -13,6 +13,7 @@ namespace DelightFinance.Controllers
         public bool IsGstEnabled { get; set; } = false;
         public string? FiscalYearStart { get; set; } = "01-01";
         public string? FiscalYearEnd { get; set; } = "12-31";
+        public string? Type { get; set; } = "Personal";
     }
 
     // --- Core Entities ---
@@ -83,6 +84,7 @@ namespace DelightFinance.Controllers
         public bool IsGstEnabled { get; set; } = false;
         public string? FiscalYearStart { get; set; } = "01-01";
         public string? FiscalYearEnd { get; set; } = "12-31";
+        public string? Type { get; set; } = "Personal";
     }
 
     public class SaveBusinessRequestDto
@@ -156,10 +158,33 @@ namespace DelightFinance.Controllers
         }
 
         [HttpPut("business/{id}")]
-        public IActionResult UpdateBusiness(Guid id, [FromBody] SaveBusinessRequestDto request)
+        public async Task<IActionResult> UpdateBusinessAsync(Guid id, [FromBody] SaveBusinessRequestDto request)
         {
-            // Logic: Update BusinessSettingsJson in DB for CurrentUserId
-            return Ok(new { Message = "Business and Settings updated successfully", User = CurrentUserName });
+            try
+            {
+                // In a real scenario, we would fetch from DB:
+                // var business = await _context.Business.FirstOrDefaultAsync(b => b.Id == id && b.UserId == CurrentUserId);
+                // For now we simulate the logic as requested
+                
+                var business = new BusinessEntity
+                {
+                    Id = id,
+                    Name = request.Name,
+                    IsDefault = request.IsDefault,
+                    BusinessSettingsJson = JsonSerializer.Serialize(request.Settings),
+                    UserId = request.UserId != Guid.Empty ? request.UserId : CurrentUserId,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                // await _context.SaveChangesAsync();
+                
+                return Ok(business);
+            }
+            catch (Exception ex)
+            {
+                // await SharedUtility.SendEmailToModeratorAsync("Publisher.WebAPI.Delight.UpdateBusinessAsync.Exception", id.ToString() + " " + ex.ToString());
+                return BadRequest(new { error = ex.Message });
+            }
         }
 
         [HttpDelete("business/{id}")]

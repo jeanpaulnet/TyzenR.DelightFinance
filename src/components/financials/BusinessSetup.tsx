@@ -15,7 +15,7 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
     currency: 'USD',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     isBudgetingEnabled: true,
-    isGSTEnabled: false,
+    isGstEnabled: false,
     type: 'Personal' as 'Personal' | 'Business'
   });
 
@@ -26,17 +26,20 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
     setLoading(true);
     try {
       const bizRes = await businessApi.create({
-        name: formData.name,
-        isDefault: true,
-        settings: {
-          currency: formData.currency,
-          timezone: formData.timezone,
-          isBudgetingEnabled: formData.isBudgetingEnabled,
-          isGstEnabled: formData.isGSTEnabled,
-          type: formData.type
+        Name: formData.name,
+        IsDefault: true,
+        Settings: {
+          Currency: formData.currency,
+          Timezone: formData.timezone,
+          IsBudgetingEnabled: formData.isBudgetingEnabled,
+          IsGstEnabled: formData.isGstEnabled,
+          FiscalYearStart: '01-01',
+          FiscalYearEnd: '12-31',
+          Type: formData.type
         }
       });
-      const bizId = bizRes.data.id;
+      // Success return is the Id guid from api (might be the whole object or just the string)
+      const bizId = bizRes.data.Id || bizRes.data.id || bizRes.data;
       
       // Set the active business ID immediately so subsequent refreshes work
       setActiveBusinessId(bizId);
@@ -196,8 +199,8 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
                        <label className="flex items-center gap-3 cursor-pointer group">
                          <input 
                            type="checkbox"
-                           checked={formData.isGSTEnabled}
-                           onChange={e => setFormData({...formData, isGSTEnabled: e.target.checked})}
+                           checked={formData.isGstEnabled}
+                           onChange={e => setFormData({...formData, isGstEnabled: e.target.checked})}
                            className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24]/20 transition-all cursor-pointer"
                          />
                          <div className="flex items-center gap-2">

@@ -63,7 +63,7 @@ interface ImportRule {
   order: number;
 }
 
-function DraggableName({ name }: { name: string }) {
+function DraggableCategory({ name }: { name: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `cat-${name}`,
     data: { type: 'category', value: name }
@@ -195,7 +195,7 @@ function SortableRuleItem({
                 {rule.actions.map((a, i) => (
                   <div key={i} className="flex items-center gap-2 px-3 py-1 bg-indigo-50 rounded-lg text-[10px] font-bold text-indigo-600">
                     <ArrowRight size={12} className="text-indigo-300" />
-                    <span className="text-indigo-400 font-medium">{a.type === 'setCategory' ? 'Set Name' : 'Rewrite Desc'}</span>
+                    <span className="text-indigo-400 font-medium">{a.type === 'setCategory' ? 'Set Category' : 'Rewrite Desc'}</span>
                     <span className="text-indigo-700 capitalize">{a.value}</span>
                   </div>
                 ))}
@@ -403,15 +403,15 @@ export default function ImportRules({ isModal = false }: { isModal?: boolean }) 
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                    <Tags size={14} className="text-indigo-500" />
-                   Smart Names
+                   Smart Categories
                 </h3>
                 <div className="space-y-3">
                   <p className="text-[11px] text-slate-500 leading-relaxed mb-4">
-                    Drag a name onto the workspace to instantly set a target outcome.
+                    Drag a category onto the workspace to instantly set a target outcome.
                   </p>
                   <div className="flex flex-col gap-2 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                     {categories.map((cat, i) => (
-                      <DraggableName key={i} name={cat} />
+                      <DraggableCategory key={i} name={cat} />
                     ))}
                   </div>
                 </div>
