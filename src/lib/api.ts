@@ -11,15 +11,9 @@ const api = axios.create({
 });
 
 // Always send User context headers if available
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   const user = auth.currentUser;
   if (user) {
-    // Current headers
-    config.headers['X-User-Email'] = user.email || '';
-    config.headers['X-User-Id'] = user.uid;
-    config.headers['X-User-Name'] = user.displayName || 'Delight User';
-    
-    // Specifically requested headers
     config.headers['UserId'] = user.uid;
     config.headers['UserName'] = user.displayName || 'Delight User';
     config.headers['UserEmail'] = user.email || '';
@@ -53,7 +47,7 @@ export interface TransactionEntity {
 export interface CategoryEntity {
   id: string;
   name: string;
-  amount: number;
+  budget: number;
   type: string;
   gstRate: number;
   month: number;
@@ -71,26 +65,28 @@ export interface ImportRuleEntity {
 }
 
 export const categoryApi = {
-  create: async (businessId: string, data: { name: string; type: string; month: number; year: number }) => 
+  create: async (businessId: string, data: { name: string; type: string; month: number; year: number; budget?: number }) => 
     await api.post(`category/${businessId}`, data),
-  update: async (id: string, data: any) => await api.put(`category/${id}`, data),
+  update: async (businessId: string, id: string, data: any) => 
+    await api.post(`category/${businessId}`, { ...data, Id: id }),
   delete: async (id: string) => await api.delete(`category/${id}`),
   list: async (businessId: string) => await api.get(`categories/${businessId}`),
 };
 
 export const businessApi = {
+  save: async (data: any, config?: any) => await api.post('business', data, config),
   create: async (data: any, config?: any) => await api.post('business', data, config),
   get: async (id: string) => await api.get(`business/${id}`),
   list: async () => await api.get('businesses'),
-  update: async (id: string, data: any) => await api.put(`business/${id}`, data),
+  update: async (id: string, data: any) => await api.post('business', { ...data, Id: id }),
   delete: async (id: string) => await api.delete(`business/${id}`),
   listCategories: async (businessId: string) => await api.get(`categories/${businessId}`),
 };
 
 export const transactionApi = {
   create: async (data: any) => await api.post('transaction', data),
-  // Note: Controller didn't have list/get for transactions, but we assume default REST pattern
-  list: async (businessId: string) => await api.get(`business/${businessId}/transactions`),
+  listPaged: async (businessId: string, params: { startDate?: string; endDate?: string; page?: number; pageSize?: number; searchText?: string }) => 
+    await api.get(`business/${businessId}/transactions/paged`, { params }),
 };
 
 export const ruleApi = {

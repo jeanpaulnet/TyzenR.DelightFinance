@@ -57,7 +57,7 @@ namespace DelightFinance.Controllers
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public decimal Amount { get; set; }
+        public decimal Budget { get; set; }
         public string Type { get; set; } = "Expense";
         public decimal GstRate { get; set; }
         public int Month { get; set; }
@@ -87,8 +87,9 @@ namespace DelightFinance.Controllers
         public string? Type { get; set; } = "Personal";
     }
 
-    public class SaveBusinessRequestDto
+    public class SaveBusinessDto
     {
+        public Guid? Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public bool IsDefault { get; set; }
         public Guid UserId { get; set; }
@@ -111,16 +112,18 @@ namespace DelightFinance.Controllers
 
     // --- Controller ---
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("delight")]
     public class DelightFinanceController : ControllerBase
     {
+        // Logic: Assuming the context is injected via a field (using the name from user's snippet)
+        // private readonly YourDbContext delightFinanceContext; 
+
         // Logic: Extracting user context from Request Headers.
-        protected Guid CurrentUserId => Guid.TryParse(Request.Headers["X-User-Id"].ToString(), out var guid) ? guid : Guid.Empty;
-        protected string CurrentUserName => Request.Headers["X-User-Name"].ToString() ?? "Delight User";
-        protected string CurrentUserEmail => Request.Headers["X-User-Email"].ToString() ?? "";
+        protected Guid CurrentUserId => Guid.TryParse(Request.Headers["UserId"].ToString(), out var guid) ? guid : Guid.Empty;
+        protected string CurrentUserName => Request.Headers["UserName"].ToString() ?? "Delight User";
+        protected string CurrentUserEmail => Request.Headers["UserEmail"].ToString() ?? "";
 
         // BUSINESS & SETTINGS
-        [HttpGet("/delight/businesses")] // Note: Mapping to external path if base is different
         [HttpGet("businesses")]
         public IActionResult ListBusinesses()
         {
@@ -129,20 +132,54 @@ namespace DelightFinance.Controllers
         }
 
         [HttpPost("business")]
-        public IActionResult CreateBusiness([FromBody] SaveBusinessRequestDto request)
+        public async Task<IActionResult> SaveBusinessAsync([FromBody] SaveBusinessDto request)
         {
-            var business = new BusinessEntity
+            try
             {
-                Id = Guid.NewGuid(),
-                Name = request.Name,
-                IsDefault = request.IsDefault,
-                BusinessSettingsJson = JsonSerializer.Serialize(request.Settings),
-                UserId = request.UserId != Guid.Empty ? request.UserId : CurrentUserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            
-            return Ok(business);
+                if (request.Id.HasValue && request.Id.Value != Guid.Empty)
+                {
+                    // Update Logic
+                    // var business = await delightFinanceContext.Businesses.FirstOrDefaultAsync(b => b.Id == request.Id.Value && b.UserId == CurrentUserId);
+                    // if (business == null) return NotFound();
+                    
+                    // business.Name = request.Name;
+                    // business.IsDefault = request.IsDefault;
+                    // business.BusinessSettingsJson = JsonSerializer.Serialize(request.Settings);
+                    // business.UpdatedAt = DateTime.UtcNow;
+                    // await delightFinanceContext.SaveChangesAsync();
+
+                    return Ok(new BusinessEntity {
+                        Id = request.Id.Value,
+                        Name = request.Name,
+                        IsDefault = request.IsDefault,
+                        BusinessSettingsJson = JsonSerializer.Serialize(request.Settings),
+                        UserId = request.UserId != Guid.Empty ? request.UserId : CurrentUserId,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    // Create Logic
+                    var business = new BusinessEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        Name = request.Name,
+                        IsDefault = request.IsDefault,
+                        BusinessSettingsJson = JsonSerializer.Serialize(request.Settings),
+                        UserId = request.UserId != Guid.Empty ? request.UserId : CurrentUserId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    // await delightFinanceContext.Businesses.AddAsync(business);
+                    // await delightFinanceContext.SaveChangesAsync();
+                    return Ok(business);
+                }
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
         }
 
         [HttpGet("business/{id}")]
@@ -157,36 +194,6 @@ namespace DelightFinance.Controllers
             return Ok(business);
         }
 
-        [HttpPut("business/{id}")]
-        public async Task<IActionResult> UpdateBusinessAsync(Guid id, [FromBody] SaveBusinessRequestDto request)
-        {
-            try
-            {
-                // In a real scenario, we would fetch from DB:
-                // var business = await _context.Business.FirstOrDefaultAsync(b => b.Id == id && b.UserId == CurrentUserId);
-                // For now we simulate the logic as requested
-                
-                var business = new BusinessEntity
-                {
-                    Id = id,
-                    Name = request.Name,
-                    IsDefault = request.IsDefault,
-                    BusinessSettingsJson = JsonSerializer.Serialize(request.Settings),
-                    UserId = request.UserId != Guid.Empty ? request.UserId : CurrentUserId,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                // await _context.SaveChangesAsync();
-                
-                return Ok(business);
-            }
-            catch (Exception ex)
-            {
-                // await SharedUtility.SendEmailToModeratorAsync("Publisher.WebAPI.Delight.UpdateBusinessAsync.Exception", id.ToString() + " " + ex.ToString());
-                return BadRequest(new { error = ex.Message });
-            }
-        }
-
         [HttpDelete("business/{id}")]
         public IActionResult DeleteBusiness(Guid id)
         {
@@ -195,37 +202,136 @@ namespace DelightFinance.Controllers
         }
 
         // TRANSACTIONS
-        [HttpPost("transaction")]
-        public IActionResult SaveTransaction([FromBody] SaveTransactionRequestDto request)
+        [HttpGet("business/{businessId}/transactions")]
+        public async Task<IActionResult> GetTransactionsAsync(Guid businessId, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
         {
-            var transaction = new TransactionEntity
+            try
             {
-                Id = Guid.NewGuid(),
-                Amount = request.Amount,
-                Deductions = request.Deductions,
-                FinalAmount = request.FinalAmount,
-                CategoryId = request.CategoryId,
-                Description = request.Description,
-                Date = request.Date,
-                Notes = request.Notes,
-                BusinessId = request.BusinessId,
-                UserId = CurrentUserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+                return Ok(new List<TransactionEntity>());
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
 
-            return Ok(transaction);
+        [HttpGet("business/{businessId}/transactions/paged")]
+        public async Task<IActionResult> GetTransactionsPagedAsync(
+            Guid businessId, 
+            [FromQuery] DateTime? startDate, 
+            [FromQuery] DateTime? endDate,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? searchText = null)
+        {
+            try
+            {
+                // Note: Pagination logic for Entity Framework Core
+                // var query = context.Transactions.Where(t => t.BusinessId == businessId && t.UserId == CurrentUserId);
+                // if (startDate.HasValue) query = query.Where(t => t.Date >= startDate.Value);
+                // if (endDate.HasValue) query = query.Where(t => t.Date <= endDate.Value);
+                // if (!string.IsNullOrEmpty(searchText)) query = query.Where(t => t.Description.Contains(searchText) || (t.Notes != null && t.Notes.Contains(searchText)));
+                // int totalCount = await query.CountAsync();
+                // var items = await query.OrderByDescending(t => t.Date).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+                
+                return Ok(new { TotalCount = 0, Page = page, PageSize = pageSize, Items = new List<TransactionEntity>() });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("transaction")]
+        public async Task<IActionResult> CreateTransactionAsync([FromBody] SaveTransactionRequestDto request)
+        {
+            try
+            {
+                var transaction = new TransactionEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Amount = request.Amount,
+                    Deductions = request.Deductions,
+                    FinalAmount = request.FinalAmount,
+                    CategoryId = request.CategoryId,
+                    Description = request.Description,
+                    Date = request.Date,
+                    Notes = request.Notes,
+                    BusinessId = request.BusinessId,
+                    UserId = CurrentUserId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                return Ok(transaction);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPut("transaction/{id}")]
+        public async Task<IActionResult> UpdateTransactionAsync(Guid id, [FromBody] SaveTransactionRequestDto request)
+        {
+            try
+            {
+                var transaction = new TransactionEntity
+                {
+                    Id = id,
+                    Amount = request.Amount,
+                    Deductions = request.Deductions,
+                    FinalAmount = request.FinalAmount,
+                    CategoryId = request.CategoryId,
+                    Description = request.Description,
+                    Date = request.Date,
+                    Notes = request.Notes,
+                    BusinessId = request.BusinessId,
+                    UserId = CurrentUserId,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                return Ok(transaction);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
         }
 
         // BUDGETS & CATEGORIES
-        [HttpGet("business/{businessId}/categories")]
+        [HttpGet("categories/{businessId}")]
         public IActionResult GetBusinessCategories(Guid businessId)
         {
-            // Logic: Filter by CurrentUserId
             return Ok(new List<CategoryEntity>());
         }
 
+        [HttpPost("category/{businessId}")]
+        public IActionResult SaveCategory(Guid businessId, [FromBody] CategoryEntity category)
+        {
+            if (category.Id == Guid.Empty)
+            {
+                category.Id = Guid.NewGuid();
+            }
+            
+            category.BusinessId = businessId;
+            category.UserId = CurrentUserId;
+            return Ok(category);
+        }
+
+        [HttpDelete("category/{id}")]
+        public IActionResult DeleteCategory(Guid id)
+        {
+            return Ok(new { success = true });
+        }
+
         // RULES
+        [HttpGet("business/{businessId}/rules")]
+        public IActionResult GetBusinessRules(Guid businessId)
+        {
+            return Ok(new List<ImportRuleEntity>());
+        }
+
         [HttpPost("rule")]
         public IActionResult SaveImportRule([FromBody] ImportRuleEntity rule)
         {

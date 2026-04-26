@@ -23,7 +23,7 @@ async function startServer() {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
   // API Routes
-  app.get("/api/health", (req, res) => {
+  app.get("/api/delight/health", (req, res) => {
     res.json({ 
       status: "ok", 
       time: new Date().toISOString(),
@@ -32,8 +32,122 @@ async function startServer() {
     });
   });
 
+  // --- Delight Finance API Mocks ---
+  const MOCK_DATA = {
+    businesses: [] as any[],
+    categories: [] as any[],
+    transactions: [] as any[],
+    rules: [] as any[]
+  };
+
+  // Seed some data if empty
+  if (MOCK_DATA.businesses.length === 0) {
+    MOCK_DATA.businesses.push({
+      id: "default-biz-123",
+      name: "Default Business",
+      isDefault: true,
+      businessSettingsJson: JSON.stringify({ currency: "USD", timezone: "UTC", isBudgetingEnabled: true, isGstEnabled: false }),
+      userId: "system",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  app.get("/api/delight/businesses", (req, res) => {
+    res.json(MOCK_DATA.businesses);
+  });
+
+  app.post("/api/delight/business", (req, res) => {
+    const biz = { 
+      ...req.body, 
+      id: req.body.Id || req.body.id || Math.random().toString(36).substr(2, 9),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const index = MOCK_DATA.businesses.findIndex(b => b.id === biz.id);
+    if (index >= 0) MOCK_DATA.businesses[index] = biz;
+    else MOCK_DATA.businesses.push(biz);
+    res.json(biz);
+  });
+
+  app.get("/api/delight/business/:id", (req, res) => {
+    const biz = MOCK_DATA.businesses.find(b => b.id === req.params.id);
+    if (biz) res.json(biz);
+    else res.status(404).json({ error: "Business not found" });
+  });
+
+  app.delete("/api/delight/business/:id", (req, res) => {
+    MOCK_DATA.businesses = MOCK_DATA.businesses.filter(b => b.id !== req.params.id);
+    res.json({ success: true });
+  });
+
+  app.get("/api/delight/categories/:businessId", (req, res) => {
+    const cats = MOCK_DATA.categories.filter(c => c.businessId === req.params.businessId);
+    res.json(cats);
+  });
+
+  app.post("/api/delight/category/:businessId", (req, res) => {
+    const cat = { 
+      ...req.body, 
+      id: req.body.Id || req.body.id || Math.random().toString(36).substr(2, 9),
+      businessId: req.params.businessId 
+    };
+    const index = MOCK_DATA.categories.findIndex(c => c.id === cat.id);
+    if (index >= 0) MOCK_DATA.categories[index] = cat;
+    else MOCK_DATA.categories.push(cat);
+    res.json(cat);
+  });
+
+  app.delete("/api/delight/category/:id", (req, res) => {
+    MOCK_DATA.categories = MOCK_DATA.categories.filter(c => c.id !== req.params.id);
+    res.json({ success: true });
+  });
+
+  app.get("/api/delight/business/:businessId/transactions/paged", (req, res) => {
+    const { startDate, endDate, page = 1, pageSize = 10, searchText = "" } = req.query;
+    let filtered = MOCK_DATA.transactions.filter(t => t.businessId === req.params.businessId);
+    
+    if (startDate) filtered = filtered.filter(t => t.date >= (startDate as string));
+    if (endDate) filtered = filtered.filter(t => t.date <= (endDate as string));
+    if (searchText) {
+      const s = (searchText as string).toLowerCase();
+      filtered = filtered.filter(t => t.description.toLowerCase().includes(s) || t.notes?.toLowerCase().includes(s));
+    }
+
+    const totalCount = filtered.length;
+    const start = (Number(page) - 1) * Number(pageSize);
+    const items = filtered.slice(start, start + Number(pageSize));
+
+    res.json({
+      totalCount,
+      page: Number(page),
+      pageSize: Number(pageSize),
+      items
+    });
+  });
+
+  app.post("/api/delight/transaction", (req, res) => {
+    const tx = { 
+      ...req.body, 
+      id: req.body.id || Math.random().toString(36).substr(2, 9),
+      createdAt: new Date().toISOString()
+    };
+    MOCK_DATA.transactions.push(tx);
+    res.json(tx);
+  });
+
+  app.get("/api/delight/business/:businessId/rules", (req, res) => {
+    res.json(MOCK_DATA.rules.filter(r => r.businessId === req.params.businessId));
+  });
+
+  app.post("/api/delight/rule", (req, res) => {
+    const rule = { ...req.body, id: Math.random().toString(36).substr(2, 9) };
+    MOCK_DATA.rules.push(rule);
+    res.json(rule);
+  });
+
   // Externalized Chat API
-  app.post("/api/chat", async (req, res) => {
+  app.post("/api/delight/chat", async (req, res) => {
     try {
       const { prompt } = req.body;
       

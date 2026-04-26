@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp, getBusinessSettings } from '../../AppContext';
+import { transactionApi } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
 import { logEvent } from '../../lib/audit';
 import { 
@@ -21,6 +22,8 @@ import { VarianceTrendChart, PortfolioPieChart } from '../ui/FinancialCharts';
 export default function Dashboard() {
   const { finData, user, dateFilter, activeBusinessId, businesses, setActiveTab } = useApp();
   const [chartType, setChartType] = useState<'bars' | 'lines'>('bars');
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const activeBusiness = useMemo(() => 
     businesses.find(b => b.id === activeBusinessId), 
@@ -38,12 +41,31 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!activeBusinessId) return;
+      setLoading(true);
+      try {
+        const res = await transactionApi.listPaged(activeBusinessId, {
+          startDate: dateFilter.startDate,
+          endDate: dateFilter.endDate,
+          page: 1,
+          pageSize: 1000 // A reasonably large number for summary analysis
+        });
+        setExpenses(res.data.items || []);
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboardData();
+  }, [activeBusinessId, dateFilter]);
+
   const filteredExpenses = useMemo(() => {
-    return finData.expenses.filter(e => {
-      const expDate = e.date.split('T')[0];
-      return expDate >= dateFilter.startDate && expDate <= dateFilter.endDate;
-    });
-  }, [finData.expenses, dateFilter]);
+    // Dates are already filtered by the API call above
+    return expenses;
+  }, [expenses]);
 
   // Map of category names to their types for color coding
   const categoryMap = useMemo(() => {
@@ -60,7 +82,7 @@ export default function Dashboard() {
     const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
     const currency = settings?.currency || 'USD';
     const totalSpent = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
-    const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
+    const totalBudget = finData.budgets.reduce((sum, b) => sum + b.budget, 0);
     const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
     
     // Group by category
@@ -76,7 +98,7 @@ export default function Dashboard() {
     const budgetByCategory = finData.budgets.reduce((acc: any, b) => {
       const cat = (b.category || 'Uncategorized').toLowerCase().trim();
       acc[cat] = {
-        amount: (acc[cat]?.amount || 0) + b.amount,
+        budget: (acc[cat]?.budget || 0) + b.budget,
         originalName: b.category || 'Uncategorized' // Keep name for display
       };
       return acc;
@@ -86,10 +108,10 @@ export default function Dashboard() {
       const actual = byCategory[catKey] || 0;
       return {
         category: budgetInfo.originalName,
-        budget: budgetInfo.amount,
+        budget: budgetInfo.budget,
         actual,
-        variance: budgetInfo.amount - actual,
-        percent: budgetInfo.amount > 0 ? (actual / budgetInfo.amount) * 100 : 0
+        variance: budgetInfo.budget - actual,
+        percent: budgetInfo.budget > 0 ? (actual / budgetInfo.budget) * 100 : 0
       };
     }).sort((a, b) => b.budget - a.budget);
 
@@ -135,49 +157,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI SNAPSHOT */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="dashboard-card shadow-sm p-6 bg-white border border-slate-100 flex flex-col justify-between">
-           <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Burn Rate</p>
-              <h3 className="text-2xl font-bold text-slate-900">{formatCurrency(summary.totalSpent / 30, summary.currency)}<span className="text-xs text-slate-400 font-medium ml-1">/ day</span></h3>
-           </div>
-           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-red-500 uppercase">
-              <ArrowUpRight size={14} />
-              Avg lifecycle expenditure
-           </div>
-        </div>
-        <div className="dashboard-card shadow-sm p-6 bg-white border border-slate-100 flex flex-col justify-between">
-           <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Savings Rate</p>
-              <h3 className="text-2xl font-bold text-slate-900">{Math.max(0, 100 - (summary.totalSpent / Math.max(1, summary.totalBudget) * 100)).toFixed(1)}%</h3>
-           </div>
-           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-emerald-500 uppercase">
-              <Activity size={14} />
-              Post-expense liquidity
-           </div>
-        </div>
-        <div className="dashboard-card shadow-sm p-6 bg-white border border-slate-100 flex flex-col justify-between">
-           <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Budget Health</p>
-              <h3 className="text-2xl font-bold text-slate-900">{(summary.totalSpent <= summary.totalBudget ? 100 : Math.max(0, 100 - ((summary.totalSpent - summary.totalBudget) / summary.totalBudget * 100))).toFixed(1)}%</h3>
-           </div>
-           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-indigo-500 uppercase">
-              <PieChartIcon size={14} />
-              Compliance score
-           </div>
-        </div>
-        <div className="dashboard-card shadow-sm p-6 bg-[#0F172A] border border-slate-800 flex flex-col justify-between">
-           <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Portfolio Value</p>
-              <h3 className="text-2xl font-bold text-white">{formatCurrency(summary.investmentValue, summary.currency)}</h3>
-           </div>
-           <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-[#86BC24] uppercase">
-              <TrendingUp size={14} />
-              Cumulative Assets
-           </div>
-        </div>
-      </div>
+      {/* KPI SNAPSHOT removed by user request */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="dashboard-card shadow-sm h-full flex flex-col">

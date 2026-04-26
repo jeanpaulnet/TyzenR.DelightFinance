@@ -44,7 +44,7 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
       // Set the active business ID immediately so subsequent refreshes work
       setActiveBusinessId(bizId);
 
-      await refreshData();
+      await refreshData({ skipTransactions: true });
       setActiveTab('dashboard');
       if (onClose) {
         onClose();

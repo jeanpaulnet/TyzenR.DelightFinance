@@ -41,6 +41,7 @@ export default function BusinessSettings() {
     type: 'Personal' | 'Business';
   } | null>(null);
 
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const activeBiz = businesses.find(b => b.id === activeBusinessId);
 
   useEffect(() => {
@@ -66,10 +67,10 @@ export default function BusinessSettings() {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
+    setSaveSuccess(false);
     try {
       const { name, isDefault, ...sv } = formData;
       
-      // Map to PascalCase for backend compatibility with BusinessSettingsDto
       const settings = {
         Currency: sv.currency,
         Timezone: sv.timezone,
@@ -80,11 +81,16 @@ export default function BusinessSettings() {
         Type: sv.type
       };
 
-      // If setting this as default, unset others first (Logic: Client-side sequential batching)
+      // If setting this as default, unset others first using full object to prevent data loss on backend
       if (isDefault) {
         const others = businesses.filter(b => b.id !== activeBiz.id && b.isDefault);
         for (const other of others) {
-           await updateBusiness(other.id, { IsDefault: false } as any);
+           const otherSettings = JSON.parse(other.businessSettingsJson || '{}');
+           await updateBusiness(other.id, { 
+             Name: other.name,
+             IsDefault: false,
+             Settings: otherSettings
+           } as any, { skipRefresh: true });
         }
       }
 
@@ -94,8 +100,13 @@ export default function BusinessSettings() {
         Settings: settings 
       } as any);
       
+      setSaveSuccess(true);
       setLoading(false);
-      setActiveTab('dashboard'); // Switch to dashboard tab after save
+      
+      // Delay transition to show success state
+      setTimeout(() => {
+        setActiveTab('dashboard');
+      }, 1500);
     } catch (err) {
       console.error(err);
       setLoading(false);
@@ -305,11 +316,22 @@ export default function BusinessSettings() {
               <div className="pt-4 flex justify-end">
                 <button 
                   type="submit"
-                  disabled={loading}
-                  className="bg-[#86BC24] text-white px-8 py-3 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-[#86BC24]/20 hover:bg-[#75A51F] transition-all flex items-center gap-2"
+                  disabled={loading || saveSuccess}
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg transition-all flex items-center gap-2",
+                    saveSuccess 
+                      ? "bg-green-500 text-white shadow-green-500/20" 
+                      : "bg-[#86BC24] text-white shadow-[#86BC24]/20 hover:bg-[#75A51F]"
+                  )}
                 >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  Save Changes
+                  {loading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : saveSuccess ? (
+                    <CheckCircle2 size={16} />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  {saveSuccess ? 'Changes Saved!' : 'Save Changes'}
                 </button>
               </div>
             </form>

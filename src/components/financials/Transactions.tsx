@@ -26,19 +26,60 @@ export default function Transactions() {
   const currencyCode = settings?.currency || 'USD';
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category' | 'description'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
   // CRUD state
-  const [isAdding, setIsAdding] = useState(true);
+  const [autoShow, setAutoShow] = useState(() => {
+    return localStorage.getItem('delight_auto_show_transaction') !== 'false';
+  });
+  const [isAdding, setIsAdding] = useState(autoShow);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingDescription, setDeletingDescription] = useState('');
   
-  // Pagination state
+  // Pagination & Loading state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [pagedData, setPagedData] = useState<{ items: any[], totalCount: number }>({ items: [], totalCount: 0 });
+  const [isFetching, setIsFetching] = useState(false);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+  
+  const fetchPagedTransactions = async () => {
+    if (!activeBusinessId) return;
+    setIsFetching(true);
+    try {
+      const res = await transactionApi.listPaged(activeBusinessId, {
+        startDate: dateFilter.startDate,
+        endDate: dateFilter.endDate,
+        page: currentPage,
+        pageSize: itemsPerPage,
+        searchText: debouncedSearch
+      });
+      
+      setPagedData({
+        items: res.data.items || [],
+        totalCount: res.data.totalCount || 0
+      });
+    } catch (err) {
+      console.error("Error fetching paged transactions:", err);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPagedTransactions();
+  }, [activeBusinessId, dateFilter, currentPage, itemsPerPage, debouncedSearch]);
   
   useEffect(() => {
     if (user) {
@@ -85,15 +126,8 @@ export default function Transactions() {
     return map;
   }, [finData.budgets]);
 
-  const processedExpenses = useMemo(() => {
-    return finData.expenses.map(e => ({
-      ...e,
-      description: e.description || 'No Description',
-      reference: e.reference || ''
-    }));
-  }, [finData.expenses]);
-
   const filteredExpenses = useMemo(() => {
+    // We still keep this for the chart, using finData.expenses which is fresh from refreshData
     const filtered = finData.expenses.filter(e => {
       const expDate = e.date.split('T')[0];
       const categoryName = categoryMap.get(e.categoryId)?.name || 'Unknown';
@@ -129,12 +163,16 @@ export default function Transactions() {
     });
   }, [finData.expenses, dateFilter, searchTerm, sortField, sortDirection, categoryMap]);
 
-  const paginatedExpenses = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredExpenses.slice(start, start + itemsPerPage);
-  }, [filteredExpenses, currentPage, itemsPerPage]);
+  // Use paged data from API for the table
+  const tableExpenses = useMemo(() => {
+    return pagedData.items.map(e => ({
+      ...e,
+      description: e.description || 'No Description',
+      reference: e.reference || ''
+    }));
+  }, [pagedData.items]);
 
-  const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
+  const totalPages = Math.ceil(pagedData.totalCount / itemsPerPage);
 
   const categoricalChartData = useMemo(() => {
     const actualsByCategory = filteredExpenses.reduce((acc: Record<string, number>, exp) => {
@@ -144,7 +182,7 @@ export default function Transactions() {
 
     return finData.budgets.map(b => ({
       category: b.category,
-      budget: b.amount,
+      budget: b.budget,
       actual: actualsByCategory[b.id] || 0
     })).filter(d => d.budget > 0 || d.actual > 0);
   }, [filteredExpenses, finData.budgets]);
@@ -199,6 +237,7 @@ export default function Transactions() {
       });
       
       await refreshData();
+      await fetchPagedTransactions();
       setIsAdding(false);
       resetForm();
     } catch (err) {
@@ -249,6 +288,7 @@ export default function Transactions() {
       });
       
       await refreshData();
+      await fetchPagedTransactions();
       setIsEditing(false);
       setEditingId(null);
       resetForm();
@@ -279,6 +319,7 @@ export default function Transactions() {
       });
 
       await refreshData();
+      await fetchPagedTransactions();
       setDeletingId(null);
     } catch (err) {
       console.error(err);
@@ -382,7 +423,23 @@ export default function Transactions() {
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                 New Transaction
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer group/toggle">
+                  <input 
+                    type="checkbox" 
+                    checked={autoShow}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setAutoShow(val);
+                      localStorage.setItem('delight_auto_show_transaction', val.toString());
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] transition-all cursor-pointer"
+                  />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover/toggle:text-slate-600 transition-colors">
+                    Auto Show
+                  </span>
+                </label>
+                <div className="w-px h-4 bg-slate-200" />
                 <button 
                   type="submit" 
                   form="tx-form"
@@ -566,7 +623,16 @@ export default function Transactions() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginatedExpenses.map((exp) => (
+              {isFetching ? (
+                <tr>
+                   <td colSpan={settings?.isGstEnabled ? 8 : 6} className="py-20 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                         <div className="w-8 h-8 border-4 border-[#86BC24] border-t-transparent rounded-full animate-spin" />
+                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Transactions...</p>
+                      </div>
+                   </td>
+                </tr>
+              ) : tableExpenses.map((exp) => (
                 <tr key={exp.id} className="group hover:bg-slate-50/80 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-xs font-mono text-slate-500">
@@ -637,11 +703,24 @@ export default function Transactions() {
                   </td>
                 </tr>
               ))}
+              {!isFetching && tableExpenses.length === 0 && (
+                <tr>
+                  <td colSpan={settings?.isGstEnabled ? 8 : 6} className="py-20 text-center space-y-4">
+                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                      <CalendarIcon size={32} />
+                    </div>
+                    <div className="max-w-xs mx-auto">
+                      <p className="text-slate-900 font-bold">No transactions found</p>
+                      <p className="text-slate-500 text-xs">Adjust your filters or add a new entry.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         
-        {filteredExpenses.length > 0 && (
+        {pagedData.totalCount > 0 && (
           <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
@@ -657,7 +736,7 @@ export default function Transactions() {
                 </select>
               </div>
               <p className="text-xs text-slate-500">
-                Showing <span className="font-bold text-slate-900">{Math.min(filteredExpenses.length, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(filteredExpenses.length, currentPage * itemsPerPage)}</span> of <span className="font-bold text-slate-900">{filteredExpenses.length}</span>
+                Showing <span className="font-bold text-slate-900">{Math.min(pagedData.totalCount, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(pagedData.totalCount, currentPage * itemsPerPage)}</span> of <span className="font-bold text-slate-900">{pagedData.totalCount}</span>
               </p>
             </div>
             

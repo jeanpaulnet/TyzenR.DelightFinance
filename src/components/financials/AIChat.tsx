@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../AppContext';
+import { transactionApi } from '../../lib/api';
 import { analyzeFinancialHealth, generateSummaryReport } from '../../lib/gemini';
 import { logEvent } from '../../lib/audit';
 import { MessageSquare, Send, Bot, User, Loader2, Download, Trash2, HelpCircle, FileText } from 'lucide-react';
@@ -20,19 +21,38 @@ interface Message {
 }
 
 export default function AIChat() {
-  const { finData, user } = useApp();
+  const { finData, user, activeBusinessId, dateFilter } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [localExpenses, setLocalExpenses] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const fetchContextData = async () => {
+      if (!activeBusinessId) return;
+      try {
+        const res = await transactionApi.listPaged(activeBusinessId, {
+          startDate: dateFilter.startDate,
+          endDate: dateFilter.endDate,
+          page: 1,
+          pageSize: 1000
+        });
+        setLocalExpenses(res.data.items || []);
+      } catch (err) {
+        console.error("Error fetching context for AI:", err);
+      }
+    };
+    fetchContextData();
+  }, [activeBusinessId, dateFilter]);
+
   const processedExpenses = useMemo(() => {
-    return finData.expenses.map(e => ({
+    return localExpenses.map(e => ({
       ...e,
       description: e.description || 'No Description',
       reference: e.reference || ''
     }));
-  }, [finData.expenses]);
+  }, [localExpenses]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -57,7 +77,7 @@ export default function AIChat() {
     try {
       // Prepare context for Gemini
       const totalSpent = processedExpenses.reduce((sum, e) => sum + e.amount, 0);
-      const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
+      const totalBudget = finData.budgets.reduce((sum, b) => sum + b.budget, 0);
       const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
 
       const aiResults = await analyzeFinancialHealth({
@@ -103,7 +123,7 @@ export default function AIChat() {
 
     try {
       const totalSpent = processedExpenses.reduce((sum, e) => sum + e.amount, 0);
-      const totalBudget = finData.budgets.reduce((sum, b) => sum + b.amount, 0);
+      const totalBudget = finData.budgets.reduce((sum, b) => sum + b.budget, 0);
       const investmentValue = finData.investments.reduce((sum, i) => sum + (i.quantity * i.purchasePrice), 0);
 
       const aiResults = await generateSummaryReport({

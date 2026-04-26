@@ -13,9 +13,9 @@ export default function BudgetManager() {
   const currencyCode = settings?.currency || 'USD';
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [newBudget, setNewBudget] = useState({ name: '', amount: 0, type: 'Expense', gstRate: 0 });
+  const [newBudget, setNewBudget] = useState({ name: '', budget: 0, type: 'Expense', gstRate: 0 });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editBudget, setEditBudget] = useState({ name: '', amount: 0, type: 'Expense', gstRate: 0 });
+  const [editBudget, setEditBudget] = useState({ name: '', budget: 0, type: 'Expense', gstRate: 0 });
   const [isAdding, setIsAdding] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
@@ -68,10 +68,12 @@ export default function BudgetManager() {
         isActive: !!yearBudget,
         data: yearBudget || { 
           name: catName, 
-          amount: mostRecent?.amount || 0,
-          id: `new-${catName}` 
+          budget: mostRecent?.budget || 0,
+          id: `new-${catName}`,
+          type: mostRecent?.type || 'Expense',
+          gstRate: mostRecent?.gstRate || 0
         },
-        fallbackAmount: mostRecent?.amount || 0
+        fallbackBudget: mostRecent?.budget || 0
       };
     });
   }, [allCategories, finData.budgets, selectedYear]);
@@ -82,12 +84,13 @@ export default function BudgetManager() {
     return Math.max(...finData.budgets.map(b => b.year));
   }, [finData.budgets]);
 
-  const handleCreateForYear = async (category: string, amount: number, type: string = 'Expense', gstRate: number = 0) => {
+  const handleCreateForYear = async (category: string, budget: number, type: string = 'Expense', gstRate: number = 0) => {
     if (!user || !activeBusinessId) return;
     try {
       const res = await categoryApi.create(activeBusinessId, {
         name: category,
         type,
+        budget,
         month: selectedYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 1,
         year: selectedYear
       });
@@ -100,7 +103,7 @@ export default function BudgetManager() {
         resourceType: 'budget',
         resourceId: res.data.id,
         resourceName: category,
-        details: `Set ${selectedYear} budget for existing category ${category} at ${formatCurrency(amount, currencyCode)}`
+        details: `Set ${selectedYear} budget for existing category ${category} at ${formatCurrency(budget, currencyCode)}`
       });
       await refreshData();
     } catch (err) {
@@ -126,6 +129,7 @@ export default function BudgetManager() {
         promises.push(categoryApi.create(activeBusinessId, {
           name: b.name,
           type: b.type || 'Expense',
+          budget: b.budget,
           month: 1, // Start of year
           year: selectedYear
         }));
@@ -156,7 +160,7 @@ export default function BudgetManager() {
     const searchName = (newBudget.name || '').trim().toLowerCase();
     const isDuplicate = allCategories.some(c => (c || '').toLowerCase() === searchName);
     if (isDuplicate) {
-      setDuplicateError(`Category "${newBudget.name}" already exists.`);
+      setDuplicateError(`Category "${newBudget.name.trim()}" already exists.`);
       return;
     }
     setDuplicateError(null);
@@ -165,6 +169,7 @@ export default function BudgetManager() {
       const res = await categoryApi.create(activeBusinessId, {
         name: newBudget.name,
         type: newBudget.type,
+        budget: newBudget.budget,
         month: selectedYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 1,
         year: selectedYear
       });
@@ -177,11 +182,11 @@ export default function BudgetManager() {
         resourceType: 'budget',
         resourceId: res.data.id,
         resourceName: newBudget.name,
-        details: `Created ${newBudget.type} budget for ${newBudget.name} with target ${formatCurrency(newBudget.amount, currencyCode)}`
+        details: `Created ${newBudget.type} category for ${newBudget.name} with ${newBudget.type === 'Asset' ? 'current value' : 'budget'} ${formatCurrency(newBudget.budget, currencyCode)}`
       });
 
       await refreshData();
-      setNewBudget({ name: '', amount: 0, type: 'Expense', gstRate: 0 });
+      setNewBudget({ name: '', budget: 0, type: 'Expense', gstRate: 0 });
       setIsAdding(false);
     } catch (err) {
       console.error(err);
@@ -198,16 +203,16 @@ export default function BudgetManager() {
     if (originalBudget && (originalBudget.name || '').toLowerCase() !== editName) {
       const isDuplicate = allCategories.some(c => (c || '').toLowerCase() === editName);
       if (isDuplicate) {
-        setDuplicateError(`Category "${editBudget.name}" already exists.`);
+        setDuplicateError(`Category "${editBudget.name.trim()}" already exists.`);
         return;
       }
     }
     setDuplicateError(null);
 
     try {
-      await categoryApi.update(editingId, {
+      await categoryApi.update(activeBusinessId, editingId, {
         name: editBudget.name,
-        amount: editBudget.amount,
+        budget: editBudget.budget,
         type: editBudget.type,
         gstRate: editBudget.type === 'Income' ? editBudget.gstRate : 0
       });
@@ -220,7 +225,7 @@ export default function BudgetManager() {
         resourceType: 'budget',
         resourceId: editingId,
         resourceName: editBudget.name,
-        details: `Updated budget for ${editBudget.name} to ${formatCurrency(editBudget.amount, currencyCode)}`
+        details: `Updated ${editBudget.name} to ${editBudget.type === 'Asset' ? 'current value' : 'budget'} ${formatCurrency(editBudget.budget, currencyCode)}`
       });
 
       await refreshData();
@@ -272,7 +277,7 @@ export default function BudgetManager() {
     setEditingId(b.id);
     setEditBudget({
       name: b.name,
-      amount: b.amount,
+      budget: b.budget,
       type: b.type || 'Expense',
       gstRate: b.gstRate || 0
     });
@@ -319,7 +324,7 @@ export default function BudgetManager() {
             className="btn-primary flex items-center gap-2 h-10 px-4"
           >
             <Plus size={18} />
-            Add Name
+            Add Category
           </button>
         )}
       </div>
@@ -362,14 +367,15 @@ export default function BudgetManager() {
           </div>
           <div className="space-y-2">
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              {newBudget.type === 'Income' ? 'Target Revenue' : 'Target Budget'}
+              {newBudget.type === 'Income' ? 'Target Revenue' : 
+               newBudget.type === 'Asset' ? `AS ON ${selectedYear}` : `BUDGET for ${selectedYear}`}
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
                 {getCurrencySymbol(currencyCode)}
               </span>
               <input 
-                type="number" step="0.01" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value) || 0})}
+                type="number" step="0.01" value={newBudget.budget} onChange={e => setNewBudget({...newBudget, budget: parseFloat(e.target.value) || 0})}
                 placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
               />
             </div>
@@ -390,7 +396,7 @@ export default function BudgetManager() {
                 <div className="relative">
                   <input 
                     readOnly 
-                    value={formatCurrency(newBudget.amount - (newBudget.amount / (1 + ((newBudget.gstRate || 0) / 100))), currencyCode)} 
+                    value={formatCurrency(newBudget.budget - (newBudget.budget / (1 + ((newBudget.gstRate || 0) / 100))), currencyCode)} 
                     className="w-full px-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
                   />
                 </div>
@@ -400,7 +406,7 @@ export default function BudgetManager() {
                 <div className="relative">
                   <input 
                     readOnly 
-                    value={formatCurrency(newBudget.amount / (1 + ((newBudget.gstRate || 0) / 100)), currencyCode)} 
+                    value={formatCurrency(newBudget.budget / (1 + ((newBudget.gstRate || 0) / 100)), currencyCode)} 
                     className="w-full px-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
                   />
                 </div>
@@ -430,8 +436,13 @@ export default function BudgetManager() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {categoryStats.map((stat) => (
           <div key={stat.data.id} className={cn(
-            "bg-white border rounded-lg p-5 shadow-sm group transition-all relative overflow-hidden flex flex-col justify-between min-h-[180px]",
-            stat.isActive ? "border-[#E2E8F0] hover:border-[#86BC24]" : "border-dashed border-slate-200 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 bg-slate-50/50"
+            "border rounded-lg p-5 shadow-sm group transition-all relative overflow-hidden flex flex-col justify-between min-h-[180px]",
+            stat.isActive ? (
+              stat.data.type === 'Income' ? "bg-green-50 border-green-100/80 hover:border-green-300" :
+              stat.data.type === 'Asset' ? "bg-blue-50 border-blue-100/80 hover:border-blue-300" :
+              stat.data.type === 'Liability' ? "bg-orange-50 border-orange-100/80 hover:border-orange-300" :
+              "bg-red-50 border-red-100/80 hover:border-red-300" // Expense
+            ) : "bg-white border-dashed border-slate-200 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 bg-slate-50/50"
           )}>
             {editingId === stat.data.id ? (
               <form onSubmit={handleUpdate} className="space-y-4">
@@ -465,11 +476,22 @@ export default function BudgetManager() {
                       <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
                     </select>
                   </div>
+                  {(editBudget.type === 'Asset' || editBudget.type === 'Liability') && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        {editBudget.type === 'Asset' ? `AS ON ${selectedYear}` : 'Target Value'}
+                      </label>
+                      <input 
+                        type="number" step="0.01" value={editBudget.budget} onChange={e => setEditBudget({...editBudget, budget: parseFloat(e.target.value) || 0})}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md text-sm font-mono outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  )}
                   {editBudget.type === 'Expense' && (
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Amount</label>
+                      <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">BUDGET for {selectedYear}</label>
                       <input 
-                        type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
+                        type="number" value={editBudget.budget} onChange={e => setEditBudget({...editBudget, budget: parseFloat(e.target.value)})}
                         className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
                       />
                     </div>
@@ -487,14 +509,14 @@ export default function BudgetManager() {
                         <div className="flex-1 space-y-1">
                           <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Deductions</label>
                           <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
-                            {(editBudget.amount - (editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100)))).toFixed(2)}
+                            {(editBudget.budget - (editBudget.budget / (1 + ((editBudget.gstRate || 0) / 100)))).toFixed(2)}
                           </div>
                         </div>
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Final Amount</label>
                         <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
-                          {(editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100))).toFixed(2)}
+                          {(editBudget.budget / (1 + ((editBudget.gstRate || 0) / 100))).toFixed(2)}
                         </div>
                       </div>
                     </div>
@@ -549,13 +571,13 @@ export default function BudgetManager() {
                 </div>
                 <div className="flex items-center gap-3 mb-4">
                    <div className={cn(
-                     "w-8 h-8 rounded bg-[#F8FAFC] border flex items-center justify-center transition-colors",
+                     "w-8 h-8 rounded border flex items-center justify-center transition-colors shadow-sm",
                      stat.isActive ? (
-                       stat.data.type === 'Income' ? "text-green-600 border-green-100 bg-green-50/50" :
-                       stat.data.type === 'Asset' ? "text-blue-600 border-blue-100 bg-blue-50/50" :
-                       stat.data.type === 'Liability' ? "text-amber-600 border-orange-100 bg-orange-50/50" :
-                       "text-[#86BC24] border-[#E2E8F0] bg-slate-50/50"
-                     ) : "text-slate-300 border-slate-200"
+                       stat.data.type === 'Income' ? "text-green-600 border-green-200 bg-white" :
+                       stat.data.type === 'Asset' ? "text-blue-600 border-blue-200 bg-white" :
+                       stat.data.type === 'Liability' ? "text-orange-600 border-orange-200 bg-white" :
+                       "text-red-600 border-red-200 bg-white"
+                     ) : "text-slate-300 border-slate-200 bg-white/50"
                    )}>
                       {(() => {
                         if (!stat.isActive) return <Target size={18} />;
@@ -571,11 +593,11 @@ export default function BudgetManager() {
                       <p className="text-lg font-bold text-[#1E293B] tracking-tight leading-none">{stat.name}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className={cn(
-                          "text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border leading-none bg-transparent",
+                          "text-[9px] font-bold uppercase tracking-widest px-1.5 py-1 rounded-full border leading-none bg-white/80 backdrop-blur-sm shadow-xs",
                           stat.isActive ? (
                             stat.data.type === 'Income' ? "text-green-600 border-green-200" :
                             stat.data.type === 'Asset' ? "text-blue-600 border-blue-200" :
-                            stat.data.type === 'Liability' ? "text-amber-600 border-orange-200" :
+                            stat.data.type === 'Liability' ? "text-orange-600 border-orange-200" :
                             "text-red-600 border-red-200"
                           ) : "text-slate-300 border-slate-100"
                         )}>
@@ -590,15 +612,23 @@ export default function BudgetManager() {
                    </div>
                 </div>
                 
-                {stat.isActive && stat.data.type === 'Expense' ? (
+                 {stat.isActive && stat.data.type === 'Expense' ? (
                   <div className="bg-slate-50/80 rounded p-3 mb-4">
                      <div className="flex justify-between items-center text-[10px] font-bold text-[#64748B] uppercase tracking-widest mb-1">
-                        <span>Monthly Budget</span>
-                        <span className="text-[#86BC24] font-mono">{formatCurrency(stat.data.amount, currencyCode)}</span>
+                        <span>BUDGET for {selectedYear}</span>
+                        <span className="text-[#86BC24] font-mono">{formatCurrency(stat.data.budget, currencyCode)}</span>
                      </div>
                      <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
                         <div className="w-3/4 h-full bg-[#86BC24]"></div>
                      </div>
+                  </div>
+                ) : (stat.isActive && stat.data.type === 'Asset') ? (
+                  <div className="bg-blue-50/50 rounded p-3 mb-4 border border-blue-100">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">
+                      <span>AS ON {selectedYear}</span>
+                      <span className="text-blue-700 font-mono text-xs">{formatCurrency(stat.data.budget || 0, currencyCode)}</span>
+                    </div>
+                    <div className="text-[9px] text-blue-400 font-medium italic">As of {selectedYear} / Month {stat.data.month}</div>
                   </div>
                 ) : (stat.isActive && stat.data.type === 'Income') ? (
                   <div className="flex-1 flex flex-col justify-center mb-4 italic text-[11px] text-slate-400">
@@ -608,19 +638,19 @@ export default function BudgetManager() {
                   <div className="flex-1 mb-4" />
                 ) : (
                   <div className="flex-1 flex flex-col justify-end">
-                    <button 
-                      onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount, stat.data.type || 'Expense', stat.data.gstRate || 0)}
-                      className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-[#86BC24] hover:text-[#86BC24] transition-all flex items-center justify-center gap-2 group/btn"
-                    >
-                      <Plus size={12} className="group-hover/btn:scale-125 transition-transform" />
-                      Set as {stat.data.type || 'Expense'} {stat.fallbackAmount > 0 ? `(${formatCurrency(stat.fallbackAmount, currencyCode)})` : ""}
-                    </button>
+                      <button 
+                        onClick={() => handleCreateForYear(stat.name, stat.fallbackBudget, stat.data.type || 'Expense', stat.data.gstRate || 0)}
+                        className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-[#86BC24] hover:text-[#86BC24] transition-all flex items-center justify-center gap-2 group/btn"
+                      >
+                        <Plus size={12} className="group-hover/btn:scale-125 transition-transform" />
+                        Set as {stat.data.type || 'Expense'} {stat.fallbackBudget > 0 ? `(${formatCurrency(stat.fallbackBudget, currencyCode)})` : ""}
+                      </button>
                   </div>
                 )}
 
                 {stat.isActive && (
                   <div className="flex items-center justify-end text-[10px] font-bold uppercase tracking-widest text-[#64748B] pt-4 border-t border-slate-50">
-                    <span className="font-mono italic text-[9px] lowercase">approx {formatCurrency(stat.data.amount / 30, currencyCode)}/day</span>
+                    <span className="font-mono italic text-[9px] lowercase">approx {formatCurrency(stat.data.budget / 30, currencyCode)}/day</span>
                   </div>
                 )}
               </>

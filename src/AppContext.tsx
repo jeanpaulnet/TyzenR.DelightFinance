@@ -71,13 +71,15 @@ interface AppContextType {
   businesses: Business[];
   activeBusinessId: string | null;
   setActiveBusinessId: (id: string | null) => void;
-  updateBusiness: (id: string, data: Partial<Business>) => Promise<void>;
+  updateBusiness: (id: string, data: Partial<Business>, options?: { skipRefresh?: boolean }) => Promise<void>;
   deleteBusiness: (id: string) => Promise<void>;
   dateFilter: DateFilter;
   setDateFilter: (filter: DateFilter) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  refreshData: () => Promise<void>;
+  refreshData: (options?: { skipTransactions?: boolean }) => Promise<void>;
+  refreshBusinesses: () => Promise<Business[]>;
+  refreshFinData: (bizId: string, options?: { skipTransactions?: boolean }) => Promise<void>;
   finData: {
     expenses: any[];
     budgets: any[];
@@ -135,10 +137,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     rules: [],
   });
 
-  const refreshData = async () => {
-    if (!user) return;
+  const refreshBusinesses = async () => {
     try {
-      // 1. Refresh Business list first (critical if we just created one)
       const businessesRes = await businessApi.list().catch(() => ({ data: [] }));
       const rawBizs = (businessesRes.data || []) as any[];
       const currentBusinesses = rawBizs.map(b => ({
@@ -151,36 +151,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updatedAt: b.updatedAt || b.UpdatedAt
       }));
       setBusinesses(currentBusinesses);
+      return currentBusinesses;
+    } catch (err) {
+      console.error("Error refreshing businesses:", err);
+      return businesses;
+    }
+  };
 
-      // If no active business but we have businesses, pick one (usually happens after first creation)
-      let effectiveBizId = activeBusinessId;
-      if (!effectiveBizId && currentBusinesses.length > 0) {
-        const defaultBiz = currentBusinesses.find((b: any) => b.isDefault) || currentBusinesses[0];
-        effectiveBizId = defaultBiz.id;
-        setActiveBusinessId(effectiveBizId);
-      }
+  const refreshFinData = async (bizId: string, options?: { skipTransactions?: boolean }) => {
+    if (!user || !bizId) return;
+    try {
+      const promises = [
+        businessApi.listCategories(bizId),
+        ruleApi.list(bizId).catch(() => ({ data: [] }))
+      ];
 
-      if (!effectiveBizId) return;
-
-      // 2. Fetch specific business data
-      const [catRes, ruleRes, txRes] = await Promise.all([
-        businessApi.listCategories(effectiveBizId),
-        ruleApi.list(effectiveBizId).catch(() => ({ data: [] })),
-        transactionApi.list(effectiveBizId).catch(() => ({ data: [] }))
-      ]);
+      const results = await Promise.all(promises);
+      const catRes = results[0];
+      const ruleRes = results[1];
 
       setFinData(prev => ({
         ...prev,
         budgets: (catRes.data || []).map((b: any) => ({
           ...b,
           name: b.name || b.Name || b.category || b.CategoryName,
-          category: b.name || b.Name || b.category || b.CategoryName // Keep category for back-compat if needed during transition
+          category: b.name || b.Name || b.category || b.CategoryName,
+          budget: b.budget ?? b.Budget ?? b.amount ?? b.Amount ?? 0
         })),
-        rules: ruleRes.data || [],
-        expenses: txRes.data || []
+        rules: ruleRes.data || []
       }));
     } catch (err) {
-      console.error("Error refreshing data:", err);
+      console.error("Error refreshing financial data:", err);
+    }
+  };
+
+  const refreshData = async (options?: { skipTransactions?: boolean }) => {
+    if (!user) return;
+    const currentBusinesses = await refreshBusinesses();
+
+    // If no active business but we have businesses, pick one
+    let effectiveBizId = activeBusinessId;
+    if (!effectiveBizId && currentBusinesses.length > 0) {
+      const defaultBiz = currentBusinesses.find((b: any) => b.isDefault) || currentBusinesses[0];
+      effectiveBizId = defaultBiz.id;
+      setActiveBusinessId(effectiveBizId);
+    }
+
+    if (effectiveBizId) {
+      await refreshFinData(effectiveBizId, options);
     }
   };
 
@@ -312,10 +330,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshData();
   }, [user, activeBusinessId]);
 
-  const updateBusiness = async (id: string, data: Partial<Business>) => {
+  const updateBusiness = async (id: string, data: Partial<Business>, options?: { skipRefresh?: boolean }) => {
     if (!user) return;
     try {
-      await businessApi.update(id, data);
+      // Ensure we pass the Id in PascalCase as expected by SaveBusinessDto
+      const payload = { ...data, Id: id };
+      await businessApi.save(payload);
+      
       await logEvent({
         userId: user.uid,
         userEmail: user.email || 'unknown',
@@ -325,19 +346,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         resourceId: id,
         details: `Updated business properties: ${Object.keys(data).join(', ')}`
       });
-      // Logic: Manual refresh after write since we don't have streams anymore
-      const res = await businessApi.list();
-      const rawBizs = (res.data || []) as any[];
-      const bizs = rawBizs.map(b => ({
-        id: b.id || b.Id,
-        name: b.name || b.Name,
-        isDefault: b.isDefault || b.IsDefault,
-        businessSettingsJson: b.businessSettingsJson || b.BusinessSettingsJson,
-        userId: b.userId || b.UserId,
-        createdAt: b.createdAt || b.CreatedAt,
-        updatedAt: b.updatedAt || b.UpdatedAt
-      }));
-      setBusinesses(bizs);
+      
+      if (options?.skipRefresh) return;
+
+      await refreshBusinesses();
+      // If we updated the active business, we might want to refresh categories at least (but not transactions)
+      if (id === activeBusinessId) {
+        const catRes = await businessApi.listCategories(id);
+        setFinData(prev => ({
+          ...prev,
+          budgets: (catRes.data || []).map((b: any) => ({
+            ...b,
+            name: b.name || b.Name || b.category || b.CategoryName,
+            category: b.name || b.Name || b.category || b.CategoryName,
+            budget: b.budget ?? b.Budget ?? b.amount ?? b.Amount ?? 0
+          }))
+        }));
+      }
     } catch (err) {
       console.error("Error updating business:", err);
       throw err;
@@ -359,9 +384,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         details: `Deleted business entity via API`
       });
       
-      const res = await businessApi.list();
-      const bizs = res.data || [];
-      setBusinesses(bizs);
+      const bizs = await refreshBusinesses();
 
       if (activeBusinessId === id) {
         setActiveBusinessId(bizs.length > 0 ? bizs[0].id : null);
@@ -388,6 +411,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeTab,
       setActiveTab,
       refreshData,
+      refreshBusinesses,
+      refreshFinData,
       finData 
     }}>
       {children}
