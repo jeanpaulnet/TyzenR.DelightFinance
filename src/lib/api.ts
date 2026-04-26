@@ -65,7 +65,7 @@ export interface ImportRuleEntity {
 }
 
 export const categoryApi = {
-  create: async (businessId: string, data: { name: string; type: string; month: number; year: number; budget?: number }) => 
+  create: async (businessId: string, data: any) => 
     await api.post(`category/${businessId}`, data),
   update: async (businessId: string, id: string, data: any) => 
     await api.post(`category/${businessId}`, { ...data, Id: id }),

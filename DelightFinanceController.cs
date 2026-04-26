@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
+using AutoMapper;
 
 namespace DelightFinance.Controllers
 {
@@ -57,7 +58,7 @@ namespace DelightFinance.Controllers
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public decimal Budget { get; set; }
+        public decimal Amount { get; set; }
         public string Type { get; set; } = "Expense";
         public decimal GstRate { get; set; }
         public int Month { get; set; }
@@ -110,11 +111,28 @@ namespace DelightFinance.Controllers
         public Guid BusinessId { get; set; }
     }
 
+    public class SaveCategoryDto
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = "Expense";
+        public int Month { get; set; }
+        public int Year { get; set; }
+        public decimal Amount { get; set; }
+        public decimal GstRate { get; set; }
+    }
+
     // --- Controller ---
     [ApiController]
     [Route("delight")]
     public class DelightFinanceController : ControllerBase
     {
+        private readonly IMapper _mapper;
+
+        public DelightFinanceController(IMapper mapper)
+        {
+            _mapper = mapper;
+        }
         // Logic: Assuming the context is injected via a field (using the name from user's snippet)
         // private readonly YourDbContext delightFinanceContext; 
 
@@ -307,16 +325,28 @@ namespace DelightFinance.Controllers
         }
 
         [HttpPost("category/{businessId}")]
-        public IActionResult SaveCategory(Guid businessId, [FromBody] CategoryEntity category)
+        public IActionResult SaveCategory(Guid businessId, [FromBody] SaveCategoryDto dto)
         {
-            if (category.Id == Guid.Empty)
+            if (dto.Id.HasValue && dto.Id.Value != Guid.Empty)
             {
-                category.Id = Guid.NewGuid();
+                // Update Logic: In a real app, you'd fetch from DB first
+                // var entity = await delightFinanceContext.Categories.FirstOrDefaultAsync(c => c.Id == dto.Id.Value && c.BusinessId == businessId);
+                // if (entity == null) return NotFound();
+                // _mapper.Map(dto, entity);
+                // await delightFinanceContext.SaveChangesAsync();
+                return Ok(dto.Id.Value);
             }
-            
-            category.BusinessId = businessId;
-            category.UserId = CurrentUserId;
-            return Ok(category);
+            else
+            {
+                // Create Logic
+                var entity = _mapper.Map<CategoryEntity>(dto);
+                entity.Id = Guid.NewGuid();
+                entity.BusinessId = businessId;
+                entity.UserId = CurrentUserId;
+                // await delightFinanceContext.Categories.AddAsync(entity);
+                // await delightFinanceContext.SaveChangesAsync();
+                return Ok(entity.Id);
+            }
         }
 
         [HttpDelete("category/{id}")]

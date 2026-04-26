@@ -87,15 +87,27 @@ async function startServer() {
   });
 
   app.post("/api/delight/category/:businessId", (req, res) => {
-    const cat = { 
-      ...req.body, 
-      id: req.body.Id || req.body.id || Math.random().toString(36).substr(2, 9),
-      businessId: req.params.businessId 
-    };
-    const index = MOCK_DATA.categories.findIndex(c => c.id === cat.id);
-    if (index >= 0) MOCK_DATA.categories[index] = cat;
-    else MOCK_DATA.categories.push(cat);
-    res.json(cat);
+    const id = req.body.Id || req.body.id;
+    if (id) {
+       const cat = { 
+        ...req.body, 
+        id: id,
+        businessId: req.params.businessId 
+      };
+      const index = MOCK_DATA.categories.findIndex(c => (c.id === id || c.Id === id));
+      if (index >= 0) MOCK_DATA.categories[index] = cat;
+      else MOCK_DATA.categories.push(cat);
+      res.json(id);
+    } else {
+      const newId = Math.random().toString(36).substr(2, 9);
+      const cat = { 
+        ...req.body, 
+        id: newId,
+        businessId: req.params.businessId 
+      };
+      MOCK_DATA.categories.push(cat);
+      res.json(newId);
+    }
   });
 
   app.delete("/api/delight/category/:id", (req, res) => {

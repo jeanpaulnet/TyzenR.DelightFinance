@@ -77,9 +77,9 @@ interface AppContextType {
   setDateFilter: (filter: DateFilter) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  refreshData: (options?: { skipTransactions?: boolean }) => Promise<void>;
+  refreshData: (options?: { skipTransactions?: boolean; skipRules?: boolean }) => Promise<void>;
   refreshBusinesses: () => Promise<Business[]>;
-  refreshFinData: (bizId: string, options?: { skipTransactions?: boolean }) => Promise<void>;
+  refreshFinData: (bizId: string, options?: { skipTransactions?: boolean; skipRules?: boolean }) => Promise<void>;
   finData: {
     expenses: any[];
     budgets: any[];
@@ -158,34 +158,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshFinData = async (bizId: string, options?: { skipTransactions?: boolean }) => {
+  const refreshFinData = async (bizId: string, options?: { skipTransactions?: boolean; skipRules?: boolean }) => {
     if (!user || !bizId) return;
     try {
-      const promises = [
-        businessApi.listCategories(bizId),
-        ruleApi.list(bizId).catch(() => ({ data: [] }))
+      const promises: Promise<any>[] = [
+        businessApi.listCategories(bizId)
       ];
+
+      if (!options?.skipRules) {
+        promises.push(ruleApi.list(bizId).catch(() => ({ data: [] })));
+      }
 
       const results = await Promise.all(promises);
       const catRes = results[0];
-      const ruleRes = results[1];
+      const ruleRes = options?.skipRules ? null : results[1];
 
       setFinData(prev => ({
         ...prev,
         budgets: (catRes.data || []).map((b: any) => ({
           ...b,
-          name: b.name || b.Name || b.category || b.CategoryName,
-          category: b.name || b.Name || b.category || b.CategoryName,
-          budget: b.budget ?? b.Budget ?? b.amount ?? b.Amount ?? 0
+          id: b.id || b.Id,
+          name: b.Name || b.name || b.category || b.CategoryName,
+          category: b.Name || b.name || b.category || b.CategoryName,
+          amount: b.Amount ?? b.amount ?? b.Budget ?? b.budget ?? 0
         })),
-        rules: ruleRes.data || []
+        rules: ruleRes ? (ruleRes.data || []) : prev.rules
       }));
     } catch (err) {
       console.error("Error refreshing financial data:", err);
     }
   };
 
-  const refreshData = async (options?: { skipTransactions?: boolean }) => {
+  const refreshData = async (options?: { skipTransactions?: boolean; skipRules?: boolean }) => {
     if (!user) return;
     const currentBusinesses = await refreshBusinesses();
 
@@ -359,7 +363,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...b,
             name: b.name || b.Name || b.category || b.CategoryName,
             category: b.name || b.Name || b.category || b.CategoryName,
-            budget: b.budget ?? b.Budget ?? b.amount ?? b.Amount ?? 0
+            amount: b.amount ?? b.Amount ?? b.budget ?? b.Budget ?? 0
           }))
         }));
       }
