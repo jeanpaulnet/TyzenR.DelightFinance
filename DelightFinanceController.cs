@@ -101,6 +101,7 @@ namespace DelightFinance.Controllers
 
     public class SaveTransactionRequestDto
     {
+        public Guid? Id { get; set; }
         public decimal Amount { get; set; }
         public decimal Deductions { get; set; }
         public decimal FinalAmount { get; set; }
@@ -114,6 +115,7 @@ namespace DelightFinance.Controllers
     public class SaveCategoryDto
     {
         public Guid? Id { get; set; }
+        public Guid BusinessId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Type { get; set; } = "Expense";
         public int Month { get; set; }
@@ -157,15 +159,6 @@ namespace DelightFinance.Controllers
                 if (request.Id.HasValue && request.Id.Value != Guid.Empty)
                 {
                     // Update Logic
-                    // var business = await delightFinanceContext.Businesses.FirstOrDefaultAsync(b => b.Id == request.Id.Value && b.UserId == CurrentUserId);
-                    // if (business == null) return NotFound();
-                    
-                    // business.Name = request.Name;
-                    // business.IsDefault = request.IsDefault;
-                    // business.BusinessSettingsJson = JsonSerializer.Serialize(request.Settings);
-                    // business.UpdatedAt = DateTime.UtcNow;
-                    // await delightFinanceContext.SaveChangesAsync();
-
                     return Ok(new BusinessEntity {
                         Id = request.Id.Value,
                         Name = request.Name,
@@ -189,8 +182,6 @@ namespace DelightFinance.Controllers
                         UpdatedAt = DateTime.UtcNow
                     };
 
-                    // await delightFinanceContext.Businesses.AddAsync(business);
-                    // await delightFinanceContext.SaveChangesAsync();
                     return Ok(business);
                 }
             }
@@ -261,55 +252,51 @@ namespace DelightFinance.Controllers
         }
 
         [HttpPost("transaction")]
-        public async Task<IActionResult> CreateTransactionAsync([FromBody] SaveTransactionRequestDto request)
+        public async Task<IActionResult> SaveTransactionAsync([FromBody] SaveTransactionRequestDto request)
         {
             try
             {
-                var transaction = new TransactionEntity
+                if (request.Id.HasValue && request.Id.Value != Guid.Empty)
                 {
-                    Id = Guid.NewGuid(),
-                    Amount = request.Amount,
-                    Deductions = request.Deductions,
-                    FinalAmount = request.FinalAmount,
-                    CategoryId = request.CategoryId,
-                    Description = request.Description,
-                    Date = request.Date,
-                    Notes = request.Notes,
-                    BusinessId = request.BusinessId,
-                    UserId = CurrentUserId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
+                    // Update Logic
+                    var transaction = new TransactionEntity
+                    {
+                        Id = request.Id.Value,
+                        Amount = request.Amount,
+                        Deductions = request.Deductions,
+                        FinalAmount = request.FinalAmount,
+                        CategoryId = request.CategoryId,
+                        Description = request.Description,
+                        Date = request.Date,
+                        Notes = request.Notes,
+                        BusinessId = request.BusinessId,
+                        UserId = CurrentUserId,
+                        UpdatedAt = DateTime.UtcNow
+                    };
 
-                return Ok(transaction);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-        }
-
-        [HttpPut("transaction/{id}")]
-        public async Task<IActionResult> UpdateTransactionAsync(Guid id, [FromBody] SaveTransactionRequestDto request)
-        {
-            try
-            {
-                var transaction = new TransactionEntity
+                    return Ok(transaction);
+                }
+                else
                 {
-                    Id = id,
-                    Amount = request.Amount,
-                    Deductions = request.Deductions,
-                    FinalAmount = request.FinalAmount,
-                    CategoryId = request.CategoryId,
-                    Description = request.Description,
-                    Date = request.Date,
-                    Notes = request.Notes,
-                    BusinessId = request.BusinessId,
-                    UserId = CurrentUserId,
-                    UpdatedAt = DateTime.UtcNow
-                };
+                    // Create Logic
+                    var transaction = new TransactionEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        Amount = request.Amount,
+                        Deductions = request.Deductions,
+                        FinalAmount = request.FinalAmount,
+                        CategoryId = request.CategoryId,
+                        Description = request.Description,
+                        Date = request.Date,
+                        Notes = request.Notes,
+                        BusinessId = request.BusinessId,
+                        UserId = CurrentUserId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
 
-                return Ok(transaction);
+                    return Ok(transaction);
+                }
             }
             catch (Exception ex)
             {
@@ -324,16 +311,12 @@ namespace DelightFinance.Controllers
             return Ok(new List<CategoryEntity>());
         }
 
-        [HttpPost("category/{businessId}")]
-        public IActionResult SaveCategory(Guid businessId, [FromBody] SaveCategoryDto dto)
+        [HttpPost("category")]
+        public IActionResult SaveCategory([FromBody] SaveCategoryDto dto)
         {
             if (dto.Id.HasValue && dto.Id.Value != Guid.Empty)
             {
-                // Update Logic: In a real app, you'd fetch from DB first
-                // var entity = await delightFinanceContext.Categories.FirstOrDefaultAsync(c => c.Id == dto.Id.Value && c.BusinessId == businessId);
-                // if (entity == null) return NotFound();
-                // _mapper.Map(dto, entity);
-                // await delightFinanceContext.SaveChangesAsync();
+                // Update Logic
                 return Ok(dto.Id.Value);
             }
             else
@@ -341,10 +324,8 @@ namespace DelightFinance.Controllers
                 // Create Logic
                 var entity = _mapper.Map<CategoryEntity>(dto);
                 entity.Id = Guid.NewGuid();
-                entity.BusinessId = businessId;
+                entity.BusinessId = dto.BusinessId;
                 entity.UserId = CurrentUserId;
-                // await delightFinanceContext.Categories.AddAsync(entity);
-                // await delightFinanceContext.SaveChangesAsync();
                 return Ok(entity.Id);
             }
         }

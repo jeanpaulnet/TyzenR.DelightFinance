@@ -58,15 +58,27 @@ async function startServer() {
   });
 
   app.post("/api/delight/business", (req, res) => {
+    const id = req.body.id || req.body.Id;
+    if (id) {
+       const index = MOCK_DATA.businesses.findIndex(b => b.id === id);
+       if (index >= 0) {
+         MOCK_DATA.businesses[index] = { 
+           ...MOCK_DATA.businesses[index],
+           ...req.body,
+           id: id,
+           updatedAt: new Date().toISOString()
+         };
+         return res.json(MOCK_DATA.businesses[index]);
+       }
+    }
+
     const biz = { 
       ...req.body, 
-      id: req.body.Id || req.body.id || Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substr(2, 9),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    const index = MOCK_DATA.businesses.findIndex(b => b.id === biz.id);
-    if (index >= 0) MOCK_DATA.businesses[index] = biz;
-    else MOCK_DATA.businesses.push(biz);
+    MOCK_DATA.businesses.push(biz);
     res.json(biz);
   });
 
@@ -86,28 +98,27 @@ async function startServer() {
     res.json(cats);
   });
 
-  app.post("/api/delight/category/:businessId", (req, res) => {
-    const id = req.body.Id || req.body.id;
+  app.post("/api/delight/category", (req, res) => {
+    const id = req.body.id || req.body.Id;
     if (id) {
-       const cat = { 
-        ...req.body, 
-        id: id,
-        businessId: req.params.businessId 
-      };
       const index = MOCK_DATA.categories.findIndex(c => (c.id === id || c.Id === id));
-      if (index >= 0) MOCK_DATA.categories[index] = cat;
-      else MOCK_DATA.categories.push(cat);
-      res.json(id);
-    } else {
-      const newId = Math.random().toString(36).substr(2, 9);
-      const cat = { 
-        ...req.body, 
-        id: newId,
-        businessId: req.params.businessId 
-      };
-      MOCK_DATA.categories.push(cat);
-      res.json(newId);
+      if (index >= 0) {
+        MOCK_DATA.categories[index] = {
+          ...MOCK_DATA.categories[index],
+          ...req.body,
+          id: id
+        };
+        return res.json(id);
+      }
     }
+
+    const newId = Math.random().toString(36).substr(2, 9);
+    const cat = { 
+      ...req.body, 
+      id: newId
+    };
+    MOCK_DATA.categories.push(cat);
+    res.json(newId);
   });
 
   app.delete("/api/delight/category/:id", (req, res) => {
@@ -139,9 +150,23 @@ async function startServer() {
   });
 
   app.post("/api/delight/transaction", (req, res) => {
+    const id = req.body.id || req.body.Id;
+    if (id) {
+       const index = MOCK_DATA.transactions.findIndex(t => t.id === id);
+       if (index >= 0) {
+         MOCK_DATA.transactions[index] = {
+           ...MOCK_DATA.transactions[index],
+           ...req.body,
+           id: id,
+           updatedAt: new Date().toISOString()
+         };
+         return res.json(MOCK_DATA.transactions[index]);
+       }
+    }
+
     const tx = { 
       ...req.body, 
-      id: req.body.id || Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substr(2, 9),
       createdAt: new Date().toISOString()
     };
     MOCK_DATA.transactions.push(tx);

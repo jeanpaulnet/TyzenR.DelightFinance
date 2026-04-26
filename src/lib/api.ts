@@ -66,9 +66,9 @@ export interface ImportRuleEntity {
 
 export const categoryApi = {
   create: async (businessId: string, data: any) => 
-    await api.post(`category/${businessId}`, data),
+    await api.post(`category`, { ...data, BusinessId: businessId }),
   update: async (businessId: string, id: string, data: any) => 
-    await api.post(`category/${businessId}`, { ...data, Id: id }),
+    await api.post(`category`, { ...data, Id: id, BusinessId: businessId }),
   delete: async (id: string) => await api.delete(`category/${id}`),
   list: async (businessId: string) => await api.get(`categories/${businessId}`),
 };
@@ -85,6 +85,7 @@ export const businessApi = {
 
 export const transactionApi = {
   create: async (data: any) => await api.post('transaction', data),
+  update: async (id: string, data: any) => await api.post('transaction', { ...data, Id: id }),
   listPaged: async (businessId: string, params: { startDate?: string; endDate?: string; page?: number; pageSize?: number; searchText?: string }) => 
     await api.get(`business/${businessId}/transactions/paged`, { params }),
 };

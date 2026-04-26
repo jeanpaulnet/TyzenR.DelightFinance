@@ -34,7 +34,7 @@ export default function Transactions() {
   const [autoShow, setAutoShow] = useState(() => {
     return localStorage.getItem('delight_auto_show_transaction') !== 'false';
   });
-  const [isAdding, setIsAdding] = useState(autoShow);
+  const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -220,7 +220,7 @@ export default function Transactions() {
         finalAmount: finalAmount,
         categoryId: formData.categoryId,
         date: new Date(formData.date).toISOString(),
-        description: formData.description || 'No Description',
+        description: formData.description,
         notes: formData.notes,
         businessId: activeBusinessId
       });
@@ -262,19 +262,17 @@ export default function Transactions() {
     }
 
     try {
-      // Assuming update is a PUT/PATCH to transaction endpoint
-      // We'll use the record ID directly
-      await transactionApi.create({
-        id: editingId,
+      // Use update method which ensures Id is in the body
+      await transactionApi.update(editingId, {
         amount: amount,
         deductions: deductions,
         finalAmount: finalAmount,
         categoryId: formData.categoryId,
         date: new Date(formData.date).toISOString(),
-        description: formData.description || 'No Description',
+        description: formData.description,
         notes: formData.notes,
         businessId: activeBusinessId
-      }); // Actually we should have an update method
+      });
 
       await logEvent({
         userId: user.uid,
@@ -419,27 +417,11 @@ export default function Transactions() {
             exit={{ opacity: 0, y: -10 }}
             className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-md"
           >
-            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                 New Transaction
               </h2>
               <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer group/toggle">
-                  <input 
-                    type="checkbox" 
-                    checked={autoShow}
-                    onChange={(e) => {
-                      const val = e.target.checked;
-                      setAutoShow(val);
-                      localStorage.setItem('delight_auto_show_transaction', val.toString());
-                    }}
-                    className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] transition-all cursor-pointer"
-                  />
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover/toggle:text-slate-600 transition-colors">
-                    Auto Show
-                  </span>
-                </label>
-                <div className="w-px h-4 bg-slate-200" />
                 <button 
                   type="submit" 
                   form="tx-form"
@@ -551,6 +533,7 @@ export default function Transactions() {
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Description</label>
                 <input 
+                  required
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
                   placeholder="e.g. Amazon Office Supplies"
@@ -941,6 +924,7 @@ export default function Transactions() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Description</label>
                   <input 
+                    required
                     value={formData.description}
                     onChange={e => setFormData({...formData, description: e.target.value})}
                     placeholder="Enter description..."
@@ -1018,6 +1002,27 @@ export default function Transactions() {
           </div>
         )}
       </AnimatePresence>
+
+      <div className="fixed bottom-6 right-6 z-[100]">
+        <label 
+          title="Always show the New Transaction when page loads for faster transaction recordings"
+          className="flex items-center gap-2 cursor-pointer group/toggle bg-white/90 backdrop-blur-sm border border-slate-200 rounded-full px-4 py-2 shadow-lg hover:shadow-xl hover:border-[#86BC24] transition-all"
+        >
+          <input 
+            type="checkbox" 
+            checked={autoShow}
+            onChange={(e) => {
+              const val = e.target.checked;
+              setAutoShow(val);
+              localStorage.setItem('delight_auto_show_transaction', val.toString());
+            }}
+            className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] transition-all cursor-pointer"
+          />
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/toggle:text-[#86BC24] transition-colors">
+            Auto Show
+          </span>
+        </label>
+      </div>
     </div>
   );
 }
