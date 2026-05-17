@@ -55,9 +55,9 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
   };
 
   return (
-    <header className="glass-header px-6 py-4 flex items-center justify-between border-b border-[#E2E8F0] shadow-sm sticky top-0 z-30">
+    <header className="bg-gradient-to-r from-[#86BC24] to-[#6DA31A] px-6 py-4 flex items-center justify-between border-b border-white/10 shadow-lg sticky top-0 z-30">
       <div className="flex items-center gap-4">
-        <button onClick={onOpenSidebar} className="lg:hidden p-2 text-slate-500 hover:bg-slate-50 rounded-lg">
+        <button onClick={onOpenSidebar} className="lg:hidden p-2 text-white/80 hover:bg-white/10 rounded-lg">
           <Menu size={20} />
         </button>
 
@@ -66,34 +66,34 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
            <div 
              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
              className={cn(
-               "flex items-center gap-3 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl hover:border-[#86BC24] transition-all cursor-pointer w-64",
-               isDropdownOpen ? "bg-white shadow-sm border-[#86BC24]" : ""
+               "flex items-center gap-4 px-6 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl hover:bg-white/20 transition-all cursor-pointer w-96 shadow-sm",
+               isDropdownOpen ? "bg-white/25 shadow-md border-white/40" : ""
              )}
            >
               <button 
                 onClick={(e) => { e.stopPropagation(); onSettingsClick(); setIsDropdownOpen(false); }}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-[#86BC24] hover:bg-[#86BC24]/10 transition-colors shrink-0"
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white bg-white/20 hover:bg-white/30 transition-colors shrink-0"
                 title="Business Settings"
               >
-                <Building2 size={18} />
+                <Building2 size={24} />
               </button>
               
               <div className="flex flex-col flex-1 min-w-0">
-                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">Active Business</span>
-                 <span className="text-sm font-bold text-[#1E293B] truncate">
+                 <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest leading-none mb-1">Active Business</span>
+                 <span className="text-base font-bold text-white truncate leading-tight">
                     {activeBusiness?.name || 'Select Business'}
                  </span>
               </div>
 
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                  <button 
                   onClick={(e) => { e.stopPropagation(); onSettingsClick(); setIsDropdownOpen(false); }}
-                  className="p-1.5 text-slate-400 hover:text-[#86BC24] hover:bg-[#86BC24]/10 rounded-lg transition-all"
+                  className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
                   title="Business Settings"
                  >
-                   <Settings size={14} />
+                   <Settings size={18} />
                  </button>
-                 <ChevronDown size={14} className={cn("text-slate-400 transition-transform", isDropdownOpen ? "rotate-180" : "")} />
+                 <ChevronDown size={18} className={cn("text-white/60 transition-transform", isDropdownOpen ? "rotate-180 text-white" : "")} />
               </div>
            </div>
 
@@ -143,12 +143,12 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
 
       <div className="flex items-center gap-4">
         {/* Date Filter */}
-        <div className="hidden md:flex items-center gap-2 p-1 bg-slate-50 border border-slate-200 rounded-xl">
+        <div className="hidden md:flex items-center gap-2 p-1 bg-white/10 border border-white/20 rounded-xl backdrop-blur-sm">
            <button 
               onClick={() => handleDateQuickSelect('month')}
               className={cn(
                  "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
-                 dateFilter.type === 'month' ? "bg-white shadow-sm text-[#86BC24]" : "text-slate-500 hover:text-slate-900"
+                 dateFilter.type === 'month' ? "bg-white shadow-sm text-[#86BC24]" : "text-white/70 hover:text-white"
               )}
            >
               This Month
@@ -157,25 +157,25 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
               onClick={() => handleDateQuickSelect('year')}
               className={cn(
                  "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
-                 dateFilter.type === 'year' ? "bg-white shadow-sm text-[#86BC24]" : "text-slate-500 hover:text-slate-900"
+                 dateFilter.type === 'year' ? "bg-white shadow-sm text-[#86BC24]" : "text-white/70 hover:text-white"
               )}
            >
               This Year
            </button>
-           <div className="w-px h-4 bg-slate-200 mx-1" />
+           <div className="w-px h-4 bg-white/20 mx-1" />
            <div className="flex items-center gap-2 px-2">
               <input 
                  type="date"
                  value={dateFilter.startDate}
                  onChange={(e) => setDateFilter({ ...dateFilter, startDate: e.target.value, type: 'custom' })}
-                 className="bg-transparent text-[11px] font-medium text-slate-600 outline-none border-none p-0 w-28"
+                 className="bg-transparent text-[11px] font-medium text-white placeholder-white/50 outline-none border-none p-0 w-28 [color-scheme:dark]"
               />
-              <span className="text-slate-300 font-bold uppercase text-[9px]">to</span>
+              <span className="text-white/30 font-bold uppercase text-[9px]">to</span>
               <input 
                  type="date"
                  value={dateFilter.endDate}
                  onChange={(e) => setDateFilter({ ...dateFilter, endDate: e.target.value, type: 'custom' })}
-                 className="bg-transparent text-[11px] font-medium text-slate-600 outline-none border-none p-0 w-28"
+                 className="bg-transparent text-[11px] font-medium text-white placeholder-white/50 outline-none border-none p-0 w-28 [color-scheme:dark]"
               />
            </div>
         </div>

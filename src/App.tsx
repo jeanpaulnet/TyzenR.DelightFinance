@@ -23,11 +23,11 @@ import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import Dashboard from './components/financials/Dashboard';
 import BudgetManager from './components/financials/BudgetManager';
+import NetWorthManager from './components/financials/NetWorthManager';
 import AIChat from './components/financials/AIChat';
 import Transactions from './components/financials/Transactions';
 import BusinessSetup from './components/financials/BusinessSetup';
 import BusinessSettings from './components/financials/BusinessSettings';
-import ImportRules from './components/financials/ImportRules';
 import Header from './components/financials/Header';
 
 function MainApp() {
@@ -56,7 +56,7 @@ function MainApp() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: !!menuAccess?.dashboard },
     { id: 'budgets', label: 'Categories', icon: Wallet, visible: !!menuAccess?.budgets },
     { id: 'transactions', label: 'Transactions', icon: Activity, visible: !!menuAccess?.transactions },
-    { id: 'rules', label: 'Rules', icon: Zap, visible: !!menuAccess?.rules },
+    { id: 'networth', label: 'Net Worth', icon: TrendingUp, visible: !!menuAccess?.networth },
     { id: 'ai', label: 'AI Chat', icon: MessageSquare, visible: !!menuAccess?.ai },
   ], [menuAccess]);
 
@@ -285,7 +285,7 @@ function MainApp() {
               {activeTab === 'dashboard' && <Dashboard />}
               {activeTab === 'transactions' && <Transactions />}
               {activeTab === 'budgets' && <BudgetManager />}
-              {activeTab === 'rules' && <ImportRules />}
+              {activeTab === 'networth' && <NetWorthManager />}
               {activeTab === 'ai' && <AIChat />}
               {activeTab === 'business-settings' && <BusinessSettings />}
             </motion.div>

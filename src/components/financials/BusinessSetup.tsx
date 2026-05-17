@@ -44,7 +44,63 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
       // Set the active business ID immediately so subsequent refreshes work
       setActiveBusinessId(bizId);
 
-      await refreshData({ skipTransactions: true });
+      // Create sample data: 2 budget entries & 2 transactions (1 for each month)
+      try {
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        
+        const prevDate = new Date();
+        prevDate.setMonth(now.getMonth() - 1);
+        const prevMonth = prevDate.getMonth() + 1;
+        const prevYear = prevDate.getFullYear();
+
+        // Sample 1: Previous Month Income
+        const resPrev = await categoryApi.create(bizId, {
+          name: 'Salary',
+          type: 'Income',
+          amount: 5000,
+          month: prevMonth,
+          year: prevYear
+        });
+        const catIdPrev = resPrev.data.Id || resPrev.data.id || resPrev.data;
+        
+        const prevMonthDate = new Date(prevYear, prevMonth - 1, 5).toISOString();
+        await transactionApi.create({
+          amount: 5000,
+          deductions: 0,
+          finalAmount: 5000,
+          categoryId: catIdPrev,
+          date: prevMonthDate,
+          description: 'Monthly Salary Credit',
+          businessId: bizId
+        });
+
+        // Sample 2: Current Month Expense
+        const resCurr = await categoryApi.create(bizId, {
+          name: 'Groceries',
+          type: 'Expense',
+          amount: 600,
+          month: currentMonth,
+          year: currentYear
+        });
+        const catIdCurr = resCurr.data.Id || resCurr.data.id || resCurr.data;
+
+        const currentMonthDate = new Date(currentYear, currentMonth - 1, now.getDate() > 10 ? 10 : now.getDate()).toISOString();
+        await transactionApi.create({
+          amount: 145.20,
+          deductions: 0,
+          finalAmount: 145.20,
+          categoryId: catIdCurr,
+          date: currentMonthDate,
+          description: 'Weekly Groceries',
+          businessId: bizId
+        });
+      } catch (sampleErr) {
+        console.error("Error creating sample data:", sampleErr);
+      }
+
+      await refreshData();
       setActiveTab('dashboard');
       if (onClose) {
         onClose();
@@ -94,15 +150,7 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
                     <p className="text-[10px] text-slate-500">Enable category targets & variance monitoring.</p>
                  </div>
               </div>
-              <div className="flex items-start gap-3">
-                 <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-[#86BC24] shrink-0 border border-white/5">
-                    <TrendingUp size={16} />
-                 </div>
-                 <div>
-                    <p className="text-xs font-bold text-slate-200 uppercase tracking-widest">KPIs</p>
-                    <p className="text-[10px] text-slate-500">Real-time performance metrics and health scores.</p>
-                 </div>
-              </div>
+
               <div className="flex items-start gap-3">
                  <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-[#86BC24] shrink-0 border border-white/5">
                     <MessageSquare size={16} />

@@ -24,7 +24,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, formatCurrency } from '../../lib/utils';
 import { categoryApi, transactionApi, businessApi } from '../../lib/api';
-import ImportRules from './ImportRules';
 
 interface ParsedTransaction {
   date: string;
@@ -57,7 +56,6 @@ export default function ExpenseUpload() {
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<'upload' | 'preview'>('upload');
   const [isSaving, setIsSaving] = useState(false);
-  const [showRulesModal, setShowRulesModal] = useState(false);
   const [wasDualColumnAmount, setWasDualColumnAmount] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [parsedData, setParsedData] = useState<ParsedTransaction[]>([]);
@@ -154,7 +152,7 @@ export default function ExpenseUpload() {
           }
         }
 
-        // If no rules matched and no category in file, use Income/Expense fallback
+        // If no rules matched and no category in file, use Derived Category fallback
         if (!matchedByRule && !category) {
           category = type; // 'Income' or 'Expense' derived from amount
         }
@@ -715,24 +713,6 @@ export default function ExpenseUpload() {
               {/* Footer */}
               <div className="px-8 py-6 border-t border-slate-100 bg-slate-50 shrink-0 flex items-center justify-between">
                 <div className="flex items-center gap-6">
-                   {step === 'preview' && (
-                     <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => setShowRulesModal(true)}
-                          className="h-10 px-4 bg-slate-100 text-slate-600 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2"
-                        >
-                          <Settings2 size={14} />
-                          Manage Rules
-                        </button>
-                        <button 
-                          onClick={applyRulesToData}
-                          className="h-10 px-4 bg-indigo-50 text-indigo-600 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-indigo-100 transition-all flex items-center gap-2"
-                        >
-                          <RefreshCw size={14} />
-                          Refresh Rules
-                        </button>
-                     </div>
-                   )}
                 </div>
                 <div className="flex items-center gap-3">
                   {step === 'preview' && (
@@ -771,67 +751,11 @@ export default function ExpenseUpload() {
           </div>
         )}
       </AnimatePresence>
-      <RulesModal 
-        show={showRulesModal} 
-        onClose={() => setShowRulesModal(false)} 
-        rules={finData.rules} 
-      />
     </>
   );
 }
 
-{/* Rules Modal Overlay */}
+{/* Rules Modal Overlay removed per client request */}
 function RulesModal({ show, onClose, rules }: { show: boolean, onClose: () => void, rules: any[] }) {
-  return (
-      <AnimatePresence>
-        {show && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-             <motion.div 
-               initial={{ opacity: 0 }}
-               animate={{ opacity: 1 }}
-               exit={{ opacity: 0 }}
-               onClick={onClose}
-               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-             />
-             <motion.div 
-               initial={{ opacity: 0, scale: 0.95, y: 20 }}
-               animate={{ opacity: 1, scale: 1, y: 0 }}
-               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-               className="relative w-full max-w-5xl bg-slate-50 rounded-[40px] shadow-2xl overflow-hidden flex flex-col h-[85vh]"
-             >
-                <div className="px-8 py-6 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
-                   <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                         <Zap size={20} fill="currentColor" />
-                      </div>
-                      <div>
-                         <h3 className="text-lg font-bold text-slate-900">Automation Engine</h3>
-                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-0.5">Rules Administration</p>
-                      </div>
-                   </div>
-                   <button 
-                     onClick={onClose}
-                     className="w-10 h-10 rounded-full hover:bg-slate-50 flex items-center justify-center text-slate-400 transition-colors"
-                   >
-                      <X size={20} />
-                   </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                   <ImportRules isModal={true} />
-                </div>
-
-                <div className="px-8 py-6 bg-white border-t border-slate-100 flex items-center justify-end shrink-0">
-                   <button 
-                     onClick={onClose}
-                     className="h-12 px-8 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all active:scale-95"
-                   >
-                     Done
-                   </button>
-                </div>
-             </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-  );
+  return null;
 }

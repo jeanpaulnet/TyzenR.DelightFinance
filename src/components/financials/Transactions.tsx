@@ -19,10 +19,92 @@ import { motion, AnimatePresence } from 'motion/react';
 import ExpenseUpload from './ExpenseUpload';
 import { BudgetBarChart } from '../ui/FinancialCharts';
 
+function TransactionRow({ exp, settings, categoryMap, currencyCode, onEdit, onDelete }: { 
+  exp: any, 
+  settings: any, 
+  categoryMap: Map<string, any>, 
+  currencyCode: string,
+  onEdit: (exp: any) => void,
+  onDelete: (id: string, desc: string) => void
+}) {
+  return (
+    <tr key={exp.id} className="group hover:bg-slate-50/80 transition-colors">
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className="text-xs font-mono text-slate-500">
+          {new Date(exp.date).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
+        </span>
+      </td>
+      <td className="px-6 py-4">
+        <p className="text-sm font-bold text-slate-900 leading-tight">{exp.description}</p>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className={cn(
+          "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border",
+          (() => {
+            const catInfo = categoryMap.get(exp.categoryId);
+            const type = catInfo?.type || 'Expense';
+            switch (type) {
+              case 'Income': return "text-emerald-700 bg-emerald-50 border-emerald-200";
+              case 'Asset': return "text-blue-700 bg-blue-50 border-blue-200";
+              case 'Liability': return "text-amber-700 bg-amber-50 border-amber-200";
+              default: return "text-rose-700 bg-rose-50 border-rose-200";
+            }
+          })()
+        )}>
+          {categoryMap.get(exp.categoryId)?.name || 'Unknown'}
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className="text-sm font-bold text-slate-900 leading-none">
+          {formatCurrency(exp.amount, currencyCode)}
+        </span>
+      </td>
+      {settings?.isGstEnabled && (
+        <>
+          <td className="px-6 py-4 whitespace-nowrap">
+            <span className="text-sm font-bold text-red-500 leading-none">
+              {formatCurrency(exp.deductions, currencyCode)}
+            </span>
+          </td>
+          <td className="px-6 py-4 whitespace-nowrap">
+            <span className="text-sm font-bold text-[#86BC24] leading-none">
+              {formatCurrency(exp.finalAmount, currencyCode)}
+            </span>
+          </td>
+        </>
+      )}
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className="text-[10px] font-mono text-slate-400">
+          {exp.notes || '-'}
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-right">
+        <div className="flex justify-end gap-1 group-hover:opacity-100 transition-opacity">
+          <button 
+            onClick={() => onEdit(exp)}
+            className="p-1.5 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+            title="Edit"
+          >
+            <Edit2 size={14} />
+          </button>
+          <button 
+            onClick={() => onDelete(exp.id, exp.description)}
+            className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+            title="Delete"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export default function Transactions() {
   const { finData, user, activeBusinessId, dateFilter, businesses, refreshData } = useApp();
   const activeBusiness = useMemo(() => businesses.find(b => b.id === activeBusinessId), [businesses, activeBusinessId]);
   const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
+  const isPersonal = settings?.type === 'Personal';
   const currencyCode = settings?.currency || 'USD';
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -130,7 +212,13 @@ export default function Transactions() {
     // We still keep this for the chart, using finData.expenses which is fresh from refreshData
     const filtered = finData.expenses.filter(e => {
       const expDate = e.date.split('T')[0];
-      const categoryName = categoryMap.get(e.categoryId)?.name || 'Unknown';
+      const catInfo = categoryMap.get(e.categoryId);
+      const categoryName = catInfo?.name || 'Unknown';
+      const categoryType = catInfo?.type || 'Expense';
+
+      // If personal, hide Asset and Liability items
+      if (isPersonal && (categoryType === 'Asset' || categoryType === 'Liability')) return false;
+
       const matchesDate = expDate >= dateFilter.startDate && expDate <= dateFilter.endDate;
       const matchesSearch = (e.description || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
                            (categoryName || '').toLowerCase().includes((searchTerm || '').toLowerCase());
@@ -400,7 +488,7 @@ export default function Transactions() {
           {(!isAdding && !editingId) && (
             <button 
               onClick={() => setIsAdding(true)}
-              className="btn-primary flex items-center gap-2 h-[42px] px-6"
+              className="bg-slate-900 text-white rounded-xl flex items-center gap-2 h-[42px] px-6 font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-md"
             >
               <Plus size={18} />
               Add
@@ -415,26 +503,26 @@ export default function Transactions() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-md"
+            className="bg-[#86BC24] rounded-xl p-6 shadow-lg border-none"
           >
               <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
                 New Transaction
               </h2>
               <div className="flex items-center gap-4">
                 <button 
                   type="submit" 
                   form="tx-form"
-                  className="bg-[#86BC24] text-white px-4 py-1.5 rounded-lg font-bold uppercase text-[10px] tracking-widest hover:bg-[#75A51F] transition-all shadow-sm flex items-center gap-1.5"
+                  className="bg-slate-900 text-white px-4 py-1.5 rounded-lg font-bold uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all shadow-sm flex items-center gap-1.5"
                 >
                   <Save size={12} />
                   Save
                 </button>
-                <div className="w-px h-4 bg-slate-200 mx-1" />
+                <div className="w-px h-4 bg-white/20 mx-1" />
                 <button 
                   type="button"
                   onClick={() => { setIsAdding(false); setEditingId(null); resetForm(); }}
-                  className="text-slate-400 hover:text-slate-600 transition-colors p-1"
+                  className="text-white/60 hover:text-white transition-colors p-1"
                   title="Close"
                 >
                   <X size={18} />
@@ -443,15 +531,15 @@ export default function Transactions() {
             </div>
             <form id="tx-form" onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</label>
+                <label className="text-[10px] font-bold text-white uppercase tracking-widest">Date</label>
                 <input 
                   type="date" required value={formData.date}
                   onChange={e => setFormData({...formData, date: e.target.value})}
-                  className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
+                  className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm"
                 />
               </div>
                <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount</label>
+                <label className="text-[10px] font-bold text-white uppercase tracking-widest">Amount</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
                     {getCurrencySymbol(currencyCode)}
@@ -460,22 +548,22 @@ export default function Transactions() {
                     type="number" step="0.01" required value={formData.amount}
                     onChange={e => setFormData({...formData, amount: e.target.value})}
                     placeholder="0.00"
-                    className="w-full pl-12 pr-4 py-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm font-mono"
+                    className="w-full pl-12 pr-4 py-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm font-mono placeholder:text-slate-300"
                   />
                 </div>
               </div>
               {settings?.isGstEnabled && (
                  <>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST %</label>
+                    <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">GST %</label>
                     <input 
                       type="number" value={formData.gstRate}
                       onChange={e => setFormData({...formData, gstRate: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm font-mono"
+                      className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm font-mono"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest text-[#86BC24]">Deductions</label>
+                    <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Deductions</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
                         {getCurrencySymbol(currencyCode)}
@@ -483,12 +571,12 @@ export default function Transactions() {
                       <input 
                         readOnly
                         value={(parseFloat(formData.amount || '0') - parseFloat(formData.actualAmount || '0')).toFixed(2)}
-                        className="w-full pl-12 pr-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
+                        className="w-full pl-12 pr-4 py-2.5 bg-white/50 border border-white/10 rounded-lg outline-none text-sm font-mono text-slate-500 cursor-not-allowed"
                       />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest text-[#86BC24]">Final Amount</label>
+                    <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Final Amount</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
                         {getCurrencySymbol(currencyCode)}
@@ -496,7 +584,7 @@ export default function Transactions() {
                       <input 
                         readOnly
                         value={formData.actualAmount}
-                        className="w-full pl-12 pr-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
+                        className="w-full pl-12 pr-4 py-2.5 bg-white/50 border border-white/10 rounded-lg outline-none text-sm font-mono text-slate-500 cursor-not-allowed"
                         title="Final amount after tax"
                       />
                     </div>
@@ -504,49 +592,46 @@ export default function Transactions() {
                  </>
               )}
                <div className="space-y-2">
-                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
+                 <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Category</label>
                  <select 
                    required value={formData.categoryId}
                    onChange={e => handleCategoryChange(e.target.value)}
-                   className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
+                   className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-colors text-sm"
                  >
-                  <option value="">Select Category</option>
-                  {finData.budgets.map(cat => {
-                    const type = cat.type || 'Expense';
-                    let foreColor = '#DC2626'; // Expense (Red-600)
-                    if (type === 'Income') foreColor = '#16A34A'; // Green-600
-                    if (type === 'Asset') foreColor = '#2563EB'; // Blue-600
-                    if (type === 'Liability') foreColor = '#D97706'; // Amber/Orange-600
-
-                    return (
-                      <option 
-                        key={cat.id} 
-                        value={cat.id}
-                        style={{ color: foreColor, fontWeight: 'bold' }}
-                      >
-                        {cat.name} ({type})
-                      </option>
-                    );
-                  })}
+                  <option value="" className="text-slate-900">Select Category</option>
+                  {finData.budgets
+                    .filter(cat => cat.type === 'Income' || cat.type === 'Expense')
+                    .map(cat => {
+                      const type = cat.type || 'Expense';
+                      return (
+                        <option 
+                          key={cat.id} 
+                          value={cat.id}
+                          className={type === 'Income' ? "text-emerald-600 font-medium" : "text-rose-600 font-medium"}
+                        >
+                          {cat.name} ({type})
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Description</label>
+                <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Description</label>
                 <input 
                   required
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
                   placeholder="e.g. Amazon Office Supplies"
-                  className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
+                  className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm placeholder:text-slate-300"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Notes</label>
+                <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Notes</label>
                 <input 
                   value={formData.notes}
                   onChange={e => setFormData({...formData, notes: e.target.value})}
                   placeholder="Notes or Receipt ID"
-                  className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-colors text-sm"
+                  className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm placeholder:text-slate-300"
                 />
               </div>
             </form>
@@ -558,51 +643,51 @@ export default function Transactions() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-200">
+              <tr className="bg-slate-700 border-b border-slate-600">
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-[#86BC24] transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest cursor-pointer hover:text-white/80 transition-colors"
                   onClick={() => toggleSort('date')}
                 >
                   <div className="flex items-center gap-1">
                     Date
-                    <ArrowUpDown size={12} className={cn(sortField === 'date' ? "text-[#86BC24]" : "text-slate-300")} />
+                    <ArrowUpDown size={12} className={cn(sortField === 'date' ? "text-[#86BC24]" : "text-white/30")} />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-[#86BC24] transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest cursor-pointer hover:text-white/80 transition-colors"
                   onClick={() => toggleSort('description')}
                 >
                   <div className="flex items-center gap-1">
                     Description
-                    <ArrowUpDown size={12} className={cn(sortField === 'description' ? "text-[#86BC24]" : "text-slate-300")} />
+                    <ArrowUpDown size={12} className={cn(sortField === 'description' ? "text-[#86BC24]" : "text-white/30")} />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-[#86BC24] transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest cursor-pointer hover:text-white/80 transition-colors"
                   onClick={() => toggleSort('category')}
                 >
                   <div className="flex items-center gap-1">
                     Category
-                    <ArrowUpDown size={12} className={cn(sortField === 'category' ? "text-[#86BC24]" : "text-slate-300")} />
+                    <ArrowUpDown size={12} className={cn(sortField === 'category' ? "text-[#86BC24]" : "text-white/30")} />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-[#86BC24] transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest cursor-pointer hover:text-white/80 transition-colors"
                   onClick={() => toggleSort('amount')}
                 >
                   <div className="flex items-center gap-1">
                     {settings?.isGstEnabled ? 'Total Amount' : 'Amount'}
-                    <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-slate-300")} />
+                    <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-white/30")} />
                   </div>
                 </th>
                 {settings?.isGstEnabled && (
                   <>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Deductions</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Final Amount</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">Deductions</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">Final Amount</th>
                   </>
                 )}
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Notes</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">Notes</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -615,76 +700,66 @@ export default function Transactions() {
                       </div>
                    </td>
                 </tr>
-              ) : tableExpenses.map((exp) => (
-                <tr key={exp.id} className="group hover:bg-slate-50/80 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-xs font-mono text-slate-500">
-                      {new Date(exp.date).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-bold text-slate-900 leading-tight">{exp.description}</p>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-transparent",
-                      (() => {
-                        const catInfo = categoryMap.get(exp.categoryId);
-                        const type = catInfo?.type || 'Expense';
-                        switch (type) {
-                          case 'Income': return "text-green-600 border-green-200";
-                          case 'Asset': return "text-blue-600 border-blue-200";
-                          case 'Liability': return "text-amber-600 border-orange-200";
-                          default: return "text-red-600 border-red-200";
-                        }
-                      })()
-                    )}>
-                      {categoryMap.get(exp.categoryId)?.name || 'Unknown'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm font-bold text-slate-900 leading-none">
-                      {formatCurrency(exp.amount, currencyCode)}
-                    </span>
-                  </td>
-                  {settings?.isGstEnabled && (
-                    <>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-bold text-red-500 leading-none">
-                          {formatCurrency(exp.deductions, currencyCode)}
-                        </span>
+              ) : isPersonal ? (
+                <>
+                  {/* Income Section */}
+                  {tableExpenses.filter(e => categoryMap.get(e.categoryId)?.type === 'Income').length > 0 && (
+                    <tr className="bg-gradient-to-r from-[#4CBB17] to-[#2E7D32]">
+                      <td colSpan={settings?.isGstEnabled ? 8 : 6} className="px-6 py-2 border-y border-white/10">
+                        <div className="flex items-center gap-3">
+                          <span className="text-white text-[10px] font-black uppercase tracking-[0.25em]">
+                            Income Flow
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-bold text-[#86BC24] leading-none">
-                          {formatCurrency(exp.finalAmount, currencyCode)}
-                        </span>
-                      </td>
-                    </>
+                    </tr>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {exp.notes || '-'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="flex justify-end gap-1 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => startEdit(exp)}
-                        className="p-1.5 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                        title="Edit"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button 
-                        onClick={() => { setDeletingId(exp.id); setDeletingDescription(exp.description); }}
-                        className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  {tableExpenses.filter(e => categoryMap.get(e.categoryId)?.type === 'Income').map((exp) => (
+                    <TransactionRow 
+                      key={exp.id} 
+                      exp={exp} 
+                      settings={settings} 
+                      categoryMap={categoryMap} 
+                      currencyCode={currencyCode} 
+                      onEdit={startEdit} 
+                      onDelete={(id, desc) => { setDeletingId(id); setDeletingDescription(desc); }} 
+                    />
+                  ))}
+
+                  {/* Expenses Section */}
+                  {tableExpenses.filter(e => categoryMap.get(e.categoryId)?.type === 'Expense').length > 0 && (
+                    <tr className="bg-gradient-to-r from-[#EF5350] to-[#C62828]">
+                      <td colSpan={settings?.isGstEnabled ? 8 : 6} className="px-6 py-2 border-y border-white/10">
+                         <div className="flex items-center gap-3">
+                           <span className="text-white text-[10px] font-black uppercase tracking-[0.25em]">
+                             Expense Outflow
+                           </span>
+                         </div>
+                      </td>
+                    </tr>
+                  )}
+                  {tableExpenses.filter(e => categoryMap.get(e.categoryId)?.type === 'Expense').map((exp) => (
+                    <TransactionRow 
+                      key={exp.id} 
+                      exp={exp} 
+                      settings={settings} 
+                      categoryMap={categoryMap} 
+                      currencyCode={currencyCode} 
+                      onEdit={startEdit} 
+                      onDelete={(id, desc) => { setDeletingId(id); setDeletingDescription(desc); }} 
+                    />
+                  ))}
+                </>
+              ) : tableExpenses.map((exp) => (
+                <TransactionRow 
+                  key={exp.id} 
+                  exp={exp} 
+                  settings={settings} 
+                  categoryMap={categoryMap} 
+                  currencyCode={currencyCode} 
+                  onEdit={startEdit} 
+                  onDelete={(id, desc) => { setDeletingId(id); setDeletingDescription(desc); }} 
+                />
               ))}
               {!isFetching && tableExpenses.length === 0 && (
                 <tr>
@@ -693,8 +768,6 @@ export default function Transactions() {
                       <CalendarIcon size={32} />
                     </div>
                     <div className="max-w-xs mx-auto">
-                      <p className="text-slate-900 font-bold">No transactions found</p>
-                      <p className="text-slate-500 text-xs">Adjust your filters or add a new entry.</p>
                     </div>
                   </td>
                 </tr>
@@ -774,8 +847,6 @@ export default function Transactions() {
               <CalendarIcon size={32} />
             </div>
             <div className="max-w-xs mx-auto">
-              <p className="text-slate-900 font-bold">No transactions found</p>
-              <p className="text-slate-500 text-xs">Adjust your date filters or add a new entry to your ledger.</p>
             </div>
           </div>
         )}
@@ -901,23 +972,20 @@ export default function Transactions() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
                   >
                     <option value="">Select Category</option>
-                    {finData.budgets.map(cat => {
-                      const type = cat.type || 'Expense';
-                      let foreColor = '#DC2626'; 
-                      if (type === 'Income') foreColor = '#16A34A'; 
-                      if (type === 'Asset') foreColor = '#2563EB'; 
-                      if (type === 'Liability') foreColor = '#D97706';
-
-                      return (
-                        <option 
-                          key={cat.id} 
-                          value={cat.id}
-                          style={{ color: foreColor, fontWeight: 'bold' }}
-                        >
-                          {cat.category} ({type})
-                        </option>
-                      );
-                    })}
+                    {finData.budgets
+                      .filter(cat => cat.type === 'Income' || cat.type === 'Expense')
+                      .map(cat => {
+                        const type = cat.type || 'Expense';
+                        return (
+                          <option 
+                            key={cat.id} 
+                            value={cat.id}
+                            className={type === 'Income' ? "text-emerald-600 font-medium" : "text-rose-600 font-medium"}
+                          >
+                            {cat.name || cat.category} ({type})
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
 
@@ -945,7 +1013,7 @@ export default function Transactions() {
                 <div className="pt-4 flex gap-3">
                   <button 
                     type="submit"
-                    className="flex-1 bg-[#86BC24] text-white py-4 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-[#86BC24]/20 hover:bg-[#75A51F] transition-all"
+                    className="flex-1 bg-slate-900 text-white py-4 rounded-xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all"
                   >
                     Save Changes
                   </button>

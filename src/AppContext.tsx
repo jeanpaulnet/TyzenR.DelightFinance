@@ -10,7 +10,7 @@ interface MenuAccess {
   transactions: boolean;
   budgets: boolean;
   ai: boolean;
-  rules?: boolean;
+  networth: boolean;
 }
 
 export interface BusinessSettings {
@@ -94,7 +94,7 @@ const DEFAULT_MENU_ACCESS: MenuAccess = {
   transactions: true,
   budgets: true,
   ai: true,
-  rules: true
+  networth: true
 };
 
 const ADMIN_MENU_ACCESS: MenuAccess = {
@@ -102,7 +102,7 @@ const ADMIN_MENU_ACCESS: MenuAccess = {
   transactions: true,
   budgets: true,
   ai: true,
-  rules: true
+  networth: true
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);

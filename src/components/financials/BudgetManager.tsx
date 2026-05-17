@@ -11,6 +11,7 @@ export default function BudgetManager() {
   const activeBusiness = useMemo(() => businesses.find(b => b.id === activeBusinessId), [businesses, activeBusinessId]);
   const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
   const currencyCode = settings?.currency || 'USD';
+  const isPersonal = settings?.type === 'Personal';
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [newBudget, setNewBudget] = useState({ name: '', amount: 0, type: 'Expense', gstRate: 0 });
@@ -75,6 +76,11 @@ export default function BudgetManager() {
         },
         fallbackAmount: mostRecent?.amount || 0
       };
+    }).filter(stat => {
+      if (!stat) return false;
+      // In the Categories view, we only show Income and Expense types.
+      // Asset and Liability items are handled in the Net Worth view.
+      return stat.data.type === 'Income' || stat.data.type === 'Expense';
     });
   }, [allCategories, finData.budgets, selectedYear]);
 
@@ -303,7 +309,7 @@ export default function BudgetManager() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold text-[#1E293B] tracking-tight">Categories</h1>
-          <p className="text-[#64748B] text-sm italic">Define categories & monthly budgets</p>
+          <p className="text-[#64748B] text-sm italic">Define and manage your income and expense categories</p>
         </div>
         
         <div className="flex items-center gap-4 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
@@ -335,10 +341,10 @@ export default function BudgetManager() {
               setIsAdding(true);
               setDuplicateError(null);
             }} 
-            className="btn-primary flex items-center gap-2 h-10 px-4"
+            className="bg-slate-900 text-white rounded-xl flex items-center gap-2 h-10 px-6 font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-md"
           >
             <Plus size={18} />
-            Add Category
+            Add
           </button>
         )}
       </div>
@@ -348,90 +354,83 @@ export default function BudgetManager() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleAdd} 
-          className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 shadow-sm max-w-4xl grid grid-cols-1 md:grid-cols-4 gap-6"
+          className="bg-[#86BC24] rounded-xl p-6 shadow-lg border-none max-w-4xl grid grid-cols-1 md:grid-cols-4 gap-6"
         >
           <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
+            <label className="block text-[10px] font-bold text-white uppercase tracking-widest">Category Name</label>
             <input 
               value={newBudget.name} onChange={e => {
                 setNewBudget({...newBudget, name: e.target.value});
                 setDuplicateError(null);
               }}
-              placeholder="e.g. Travel" required className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm"
+              placeholder="e.g. Travel" required className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm"
             />
           </div>
           <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</label>
+            <label className="block text-[10px] font-bold text-white uppercase tracking-widest">Type</label>
             <select 
               value={newBudget.type} 
               onChange={e => setNewBudget({...newBudget, type: e.target.value})}
-              className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-bold"
-              style={{ 
-                color: 
-                  newBudget.type === 'Income' ? '#16A34A' : 
-                  newBudget.type === 'Asset' ? '#2563EB' : 
-                  newBudget.type === 'Liability' ? '#D97706' : '#DC2626' 
-              }}
+              className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm font-bold"
             >
-              <option value="Income" style={{ color: '#16A34A' }}>Income</option>
-              <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
-              <option value="Asset" style={{ color: '#2563EB' }}>Asset</option>
-              <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
+              <option value="Income">Income</option>
+              <option value="Expense">Expense</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              {newBudget.type === 'Income' ? 'Target Revenue' : 
-               newBudget.type === 'Asset' ? `AS ON ${selectedYear}` : `AMOUNT for ${selectedYear}`}
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
-                {getCurrencySymbol(currencyCode)}
-              </span>
-              <input 
-                type="number" step="0.01" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value) || 0})}
-                placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
-              />
+          {newBudget.type !== 'Income' && (
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-white uppercase tracking-widest">
+                {newBudget.type === 'Asset' ? `AS ON ${selectedYear}` : `AMOUNT for ${selectedYear}`}
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
+                  {getCurrencySymbol(currencyCode)}
+                </span>
+                <input 
+                  type="number" step="0.01" value={newBudget.amount} onChange={e => setNewBudget({...newBudget, amount: parseFloat(e.target.value) || 0})}
+                  placeholder="0.00" required className="w-full pl-12 pr-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm font-mono"
+                />
+              </div>
             </div>
-          </div>
+          )}
           {settings?.isGstEnabled && (
             <div className="flex gap-4">
               <div className="flex-1 space-y-2">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">GST (%)</label>
+                <label className="block text-[10px] font-bold text-white uppercase tracking-widest">GST (%)</label>
                 <div className="relative">
                   <input 
                     type="number" value={newBudget.gstRate} onChange={e => setNewBudget({...newBudget, gstRate: parseFloat(e.target.value) || 0})}
-                    placeholder="0" required className="w-full px-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:border-[#86BC24] transition-all text-sm font-mono"
+                    placeholder="0" required className="w-full px-4 py-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm font-mono"
                   />
                 </div>
               </div>
               <div className="flex-1 space-y-2">
-                <label className="block text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Deductions</label>
+                <label className="block text-[10px] font-bold text-white uppercase tracking-widest">Deductions</label>
                 <div className="relative">
                   <input 
                     readOnly 
                     value={formatCurrency(newBudget.amount - (newBudget.amount / (1 + ((newBudget.gstRate || 0) / 100))), currencyCode)} 
-                    className="w-full px-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg outline-none text-sm font-mono text-white/90 cursor-not-allowed"
                   />
                 </div>
               </div>
               <div className="flex-1 space-y-2">
-                <label className="block text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Final Amount</label>
+                <label className="block text-[10px] font-bold text-white uppercase tracking-widest">Final Amount</label>
                 <div className="relative">
                   <input 
                     readOnly 
                     value={formatCurrency(newBudget.amount / (1 + ((newBudget.gstRate || 0) / 100)), currencyCode)} 
-                    className="w-full px-4 py-2.5 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-lg outline-none text-sm font-mono text-[#86BC24] cursor-not-allowed"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg outline-none text-sm font-mono text-white/90 cursor-not-allowed"
                   />
                 </div>
               </div>
             </div>
           )}
-          <div className="flex items-end gap-2">
-            <button type="submit" className="flex-1 btn-primary py-2.5 font-bold uppercase text-[10px] tracking-widest h-[42px]">
-              Create
+          <div className="md:col-start-4 flex items-end gap-2">
+            <button type="submit" className="flex-1 bg-slate-900 text-white rounded-lg font-bold uppercase text-[10px] tracking-widest h-[42px] hover:bg-slate-800 transition-all shadow-md">
+              Add
             </button>
-            <button type="button" onClick={() => setIsAdding(false)} className="px-3 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 h-[42px]">
+            <button type="button" onClick={() => setIsAdding(false)} className="px-3 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-all h-[42px]">
               <X size={18} />
             </button>
           </div>
@@ -479,15 +478,11 @@ export default function BudgetManager() {
                       className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24] font-bold"
                       style={{ 
                         color: 
-                          editBudget.type === 'Income' ? '#16A34A' : 
-                          editBudget.type === 'Asset' ? '#2563EB' : 
-                          editBudget.type === 'Liability' ? '#D97706' : '#DC2626' 
+                          editBudget.type === 'Income' ? '#16A34A' : '#DC2626' 
                       }}
                     >
                       <option value="Income" style={{ color: '#16A34A' }}>Income</option>
                       <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
-                      <option value="Asset" style={{ color: '#2563EB' }}>Asset</option>
-                      <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
                     </select>
                   </div>
                   {(editBudget.type === 'Asset' || editBudget.type === 'Liability') && (
