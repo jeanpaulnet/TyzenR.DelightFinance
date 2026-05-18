@@ -32,6 +32,18 @@ export default function NetWorthManager() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string | null, category: string } | null>(null);
 
   useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAdding(false);
+        setEditingId(null);
+        setDeleteConfirm(null);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
+  useEffect(() => {
     if (user) {
       logEvent({
         userId: user.uid,

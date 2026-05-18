@@ -436,7 +436,9 @@ export default function Dashboard() {
           const targetPassive = summary.passiveIncomeTarget;
           const targetEssential = summary.essentialExpensesTarget;
           
-          const ffPercent = targetEssential > 0 ? (targetPassive / targetEssential) * 100 : 0;
+          const ffPercent = targetEssential > 0 
+            ? (targetPassive / targetEssential) * 100 
+            : (targetPassive > 0 ? 100 : 0);
           const ffAchieved = isPersonal && ffPercent >= 100;
           
           // Use targets for the display

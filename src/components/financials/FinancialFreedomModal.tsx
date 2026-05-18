@@ -67,12 +67,14 @@ export default function FinancialFreedomModal({ isOpen, onClose }: FinancialFree
 
     try {
       const currentSettings = JSON.parse(activeBusiness.businessSettingsJson || '{}');
+      const updatedSettings = {
+        ...currentSettings,
+        passiveIncomeCategoryIds: newList
+      };
+      
       await updateBusiness(activeBusiness.id, {
-        businessSettingsJson: JSON.stringify({
-          ...currentSettings,
-          passiveIncomeCategoryIds: newList
-        })
-      });
+        BusinessSettingsJson: JSON.stringify(updatedSettings)
+      } as any);
     } catch (e) {
       console.error(e);
       // Revert on error
@@ -92,18 +94,30 @@ export default function FinancialFreedomModal({ isOpen, onClose }: FinancialFree
 
     try {
       const currentSettings = JSON.parse(activeBusiness.businessSettingsJson || '{}');
+      const updatedSettings = {
+        ...currentSettings,
+        essentialExpenseCategoryIds: newList
+      };
+      
       await updateBusiness(activeBusiness.id, {
-        businessSettingsJson: JSON.stringify({
-          ...currentSettings,
-          essentialExpenseCategoryIds: newList
-        })
-      });
+        BusinessSettingsJson: JSON.stringify(updatedSettings)
+      } as any);
     } catch (e) {
       console.error(e);
       // Revert on error
       setLocalEssentialIds(localEssentialIds);
     }
   };
+
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleEsc);
+    }
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -119,7 +133,30 @@ export default function FinancialFreedomModal({ isOpen, onClose }: FinancialFree
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">Financial Freedom</h2>
-              <p className="text-xs text-slate-400 font-medium uppercase tracking-widest mt-0.5">Configuration & Targets</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-xs text-slate-400 font-medium uppercase tracking-widest">Configuration & Targets</p>
+                {totals.essentialTotal > 0 && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-slate-300" />
+                    <span className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                      (totals.passiveTotal / totals.essentialTotal) >= 1 
+                        ? "bg-emerald-100 text-emerald-700" 
+                        : "bg-indigo-100 text-indigo-700"
+                    )}>
+                      {((totals.passiveTotal / totals.essentialTotal) * 100).toFixed(0)}% Achieved
+                    </span>
+                  </>
+                )}
+                {totals.essentialTotal === 0 && totals.passiveTotal > 0 && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-slate-300" />
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                      100% Achieved
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-50 rounded-xl transition-colors">

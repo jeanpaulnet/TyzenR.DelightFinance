@@ -54,13 +54,32 @@ export default function ExpenseUpload() {
   const currencyCode = settings?.currency || 'USD';
   
   const [isOpen, setIsOpen] = useState(false);
-  const [step, setStep] = useState<'upload' | 'preview'>('upload');
+  const [step, setStep] = useState<'upload' | 'create-categories' | 'resolve' | 'preview'>('upload');
   const [isSaving, setIsSaving] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isCreatingCategories, setIsCreatingCategories] = useState(false);
   const [wasDualColumnAmount, setWasDualColumnAmount] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [importResult, setImportResult] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedTransaction[]>([]);
+  const [unresolvedNames, setUnresolvedNames] = useState<string[]>([]);
+  const [newCategorySettings, setNewCategorySettings] = useState<Record<string, { type: 'Income' | 'Expense', create: boolean }>>({});
+  const [resolutions, setResolutions] = useState<Record<string, { type: 'create' | 'map', target?: string }>>({});
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+        setStep('upload');
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleEsc);
+    }
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen]);
 
   // Map of category names to their types
   const categoryTypeMap = useMemo(() => {
@@ -81,6 +100,7 @@ export default function ExpenseUpload() {
   };
 
   const processRawRows = async (rows: any[], headers: string[]) => {
+    setIsProcessing(true);
     setFeedback({ type: 'success', message: 'Analyzing file structure...' });
     
     try {
@@ -118,12 +138,14 @@ export default function ExpenseUpload() {
            }
         } else if (amountHeader) {
            const rawVal = parseFloat(String(row[amountHeader] || '0').replace(/[^0-9.-]+/g, ""));
-           amount = Math.abs(rawVal);
-           type = rawVal >= 0 ? 'Income' : 'Expense';
+           if (!isNaN(rawVal)) {
+             amount = Math.abs(rawVal);
+             type = rawVal >= 0 ? 'Income' : 'Expense';
+           }
         }
 
         const rawCategory = (catHeader ? String(row[catHeader] || '') : '').trim();
-        const description = descHeader ? String(row[descHeader] || 'No description') : 'No description';
+        const description = (descHeader ? String(row[descHeader] || '') : '').trim() || 'No description';
         
         let category = rawCategory;
         let matchedByRule = false;
@@ -133,7 +155,7 @@ export default function ExpenseUpload() {
           const isMatch = rule.conditions.every((cond: any) => {
             const fieldVal = String(description || '').toLowerCase();
             const searchVal = String(cond.value || '').toLowerCase();
-            if (cond.field !== 'description') return false; // Simple matching for now
+            if (cond.field !== 'description') return false; 
 
             switch (cond.operator) {
               case 'contains': return fieldVal.includes(searchVal);
@@ -152,16 +174,26 @@ export default function ExpenseUpload() {
           }
         }
 
-        // If no rules matched and no category in file, use Derived Category fallback
         if (!matchedByRule && !category) {
-          category = type; // 'Income' or 'Expense' derived from amount
+          category = type; 
         }
 
         const detectedType = categoryTypeMap.get((category || '').toLowerCase()) || type;
 
+        // Robust date parsing
+        let formattedDate = new Date().toISOString().split('T')[0];
+        if (dateHeader && row[dateHeader]) {
+          try {
+            const d = new Date(row[dateHeader]);
+            if (!isNaN(d.getTime())) {
+              formattedDate = d.toISOString().split('T')[0];
+            }
+          } catch(e) {}
+        }
+
         let tx: ParsedTransaction = {
           id: `row-${idx}`,
-          date: dateHeader && row[dateHeader] ? new Date(row[dateHeader]).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          date: formattedDate,
           amount,
           description,
           category,
@@ -172,7 +204,7 @@ export default function ExpenseUpload() {
         };
 
         return tx;
-      }).filter(t => t.amount !== 0);
+      }).filter(t => !isNaN(t.amount) && t.amount !== 0);
 
       if (transactions.length === 0) {
         setFeedback({ type: 'error', message: 'No valid transaction rows found in file.' });
@@ -180,13 +212,56 @@ export default function ExpenseUpload() {
       }
 
       setParsedData(transactions);
-      setSelectedRows(new Set(transactions.map(t => t.id)));
-      setStep('preview');
+      
+      // Look for unresolved categories
+      const missing = Array.from(new Set(transactions
+        .map(t => t.category)
+        .filter(c => c && !categoryTypeMap.has(c.toLowerCase().trim()))
+      ));
+
+      if (missing.length > 0) {
+        setUnresolvedNames(missing);
+        const initialSettings: Record<string, { type: 'Income' | 'Expense', create: boolean }> = {};
+        missing.forEach(name => {
+          // Guess type based on data if possible
+          const firstTx = transactions.find(t => t.category === name);
+          initialSettings[name] = { 
+            type: firstTx?.type === 'Income' ? 'Income' : 'Expense',
+            create: true 
+          };
+        });
+        setNewCategorySettings(initialSettings);
+        setStep('create-categories');
+      } else {
+        setSelectedRows(new Set(transactions.map(t => t.id)));
+        executeImport(transactions);
+      }
       setFeedback(null);
     } catch (err) {
       console.error(err);
       setFeedback({ type: 'error', message: 'Failed to process file records.' });
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const finalizeResolution = () => {
+    const updated = parsedData.map(tx => {
+      const res = resolutions[tx.category];
+      if (res && res.type === 'map' && res.target) {
+        const newType = categoryTypeMap.get((res.target || '').toLowerCase());
+        return {
+          ...tx,
+          category: res.target,
+          type: wasDualColumnAmount ? tx.type : (newType || tx.type)
+        };
+      }
+      return tx;
+    });
+    
+    setParsedData(updated);
+    setSelectedRows(new Set(updated.map(t => t.id)));
+    executeImport(updated);
   };
 
   const applyRulesToData = () => {
@@ -324,63 +399,82 @@ export default function ExpenseUpload() {
     });
   };
 
-  const handleImport = async () => {
-    if (!user || !activeBusinessId) return;
-    setIsSaving(true);
+  const handleCreateCategories = async () => {
+    if (!activeBusinessId) return;
+    setIsCreatingCategories(true);
+    setFeedback({ type: 'success', message: 'Creating new categories...' });
     
     try {
-      const rowsToSave = parsedData.filter(t => selectedRows.has(t.id));
-      let count = 0;
-
-      // Track existing categories to avoid redundant lookups or creations
-      const existingCats = new Set(finData.budgets.map(b => (b.name || '').toLowerCase()));
-      const createdThisTurn = new Set<string>();
-
-      for (const row of rowsToSave) {
-        const catKey = (row.category || '').toLowerCase();
-        const categoryInfo = finData.budgets.find(b => (b.name || '').toLowerCase() === catKey);
-        
-        // Auto-create category if it doesn't exist
-        if (catKey && !existingCats.has(catKey) && !createdThisTurn.has(catKey)) {
-          const txDate = new Date(row.date);
-          await categoryApi.create(activeBusinessId, {
-            name: row.category,
-            type: row.type,
-            month: txDate.getMonth() + 1,
-            year: txDate.getFullYear()
-          });
-          createdThisTurn.add(catKey);
-        }
-
-        // Logic: Apply GST extraction for imported income
-        const isIncome = (categoryInfo?.type === 'Income') || (row.type === 'Income');
-        const gstRate = (settings?.isGstEnabled && isIncome) ? (categoryInfo?.gstRate || 0) : 0;
-        
-        const amount = row.amount;
-        let finalAmount = amount;
-        let deductions = 0;
-        if (gstRate > 0) {
-          finalAmount = amount / (1 + (gstRate / 100));
-          deductions = amount - finalAmount;
-        }
-
-        // We need the ID. If we just created it or it existed, we find it.
-        const catId = categoryInfo?.id || (await businessApi.listCategories(activeBusinessId)).data.find((c: any) => (c.name || '').toLowerCase() === catKey)?.id;
-
-        if (catId) {
-          await transactionApi.create({
-            amount: amount,
-            deductions: deductions,
-            finalAmount: finalAmount,
-            categoryId: catId,
-            date: new Date(row.date).toISOString(),
-            description: row.description,
-            notes: row.reference,
-            businessId: activeBusinessId
-          });
-          count++;
-        }
+      const entries = Object.entries(newCategorySettings).filter(([_, s]) => s.create);
+      const now = new Date();
+      
+      for (const [name, setting] of entries) {
+        await categoryApi.create(activeBusinessId, {
+          name,
+          type: setting.type,
+          budget: 0,
+          month: now.getMonth() + 1,
+          year: now.getFullYear()
+        });
       }
+      
+      // Initial resolutions for those we didn't create
+      const initialRes: Record<string, { type: 'create' | 'map', target?: string }> = {};
+      unresolvedNames.forEach(name => {
+        if (!newCategorySettings[name]?.create) {
+           initialRes[name] = { type: 'map' };
+        }
+      });
+      setResolutions(initialRes);
+      
+      setFeedback({ type: 'success', message: `Created ${entries.length} categories.` });
+      
+      const remainingToMap = unresolvedNames.filter(name => !newCategorySettings[name]?.create);
+      if (remainingToMap.length === 0) {
+         setSelectedRows(new Set(parsedData.map(t => t.id)));
+         executeImport(parsedData);
+      } else {
+         setStep('resolve');
+      }
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'error', message: 'Failed to create categories.' });
+    } finally {
+      setIsCreatingCategories(false);
+    }
+  };
+
+  const executeImport = async (dataToImport?: ParsedTransaction[]) => {
+    if (!user || !activeBusinessId) return;
+    setIsSaving(true);
+    setImportResult(null);
+    
+    try {
+      const rowsToSave = dataToImport || parsedData.filter(t => selectedRows.has(t.id));
+      if (rowsToSave.length === 0) {
+        setFeedback({ type: 'error', message: 'No transactions selected for import.' });
+        setIsSaving(false);
+        return;
+      }
+
+      // Filter and format the data to match the requested API schema
+      const formattedTransactions = rowsToSave.map(t => ({
+        date: t.date, 
+        description: t.description.substring(0, 500),
+        amount: Math.round(t.amount * 100) / 100,
+        category: t.category.substring(0, 100),
+        reference: (t.reference || '').substring(0, 500)
+      }));
+
+      const response = await transactionApi.import(activeBusinessId, formattedTransactions);
+      
+      // Prioritize success message from API if available
+      const apiData = response.data;
+      const apiMessage = typeof apiData === 'string' ? apiData : (apiData?.message || apiData?.detail || apiData?.title);
+      const resultText = apiMessage || `Successfully imported ${rowsToSave.length} records.`;
+      
+      setImportResult(resultText);
+      setFeedback({ type: 'success', message: resultText });
 
       await logEvent({
         userId: user.uid,
@@ -388,21 +482,48 @@ export default function ExpenseUpload() {
         userName: user.displayName || 'Delight User',
         action: 'IMPORT',
         resourceType: 'expense',
-        details: `Imported ${count} transactions from preview`
+        details: `Imported ${rowsToSave.length} transactions: ${resultText}`
       });
 
-      setFeedback({ type: 'success', message: `Successfully imported ${count} transactions.` });
-      setStep('upload');
-      setParsedData([]);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      setTimeout(() => setIsOpen(false), 2000);
-    } catch (err) {
+      // Clear after success
+      setTimeout(() => {
+        if (isOpen) {
+           setStep('upload');
+           setParsedData([]);
+           setUnresolvedNames([]);
+           if (fileInputRef.current) fileInputRef.current.value = '';
+           setIsOpen(false);
+           setImportResult(null);
+        }
+      }, 3000);
+    } catch (err: any) {
       console.error(err);
-      setFeedback({ type: 'error', message: 'Error saving transactions to database.' });
+      let msg = 'Error saving transactions via API.';
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (data.errors) {
+          const errorEntries = Object.entries(data.errors);
+          if (errorEntries.length > 0) {
+            const [field, messages]: [string, any] = errorEntries[0];
+            const detail = Array.isArray(messages) ? messages[0] : String(messages);
+            // If the field name is a complex path like Transactions[0].Date, just show the message
+            msg = field.includes('.') ? detail : `${field}: ${detail}`;
+          }
+        } else if (data.detail) {
+          msg = data.detail;
+        } else if (data.message) {
+          msg = data.message;
+        } else if (data.title) {
+          msg = data.title;
+        }
+      }
+      setFeedback({ type: 'error', message: msg });
     } finally {
       setIsSaving(false);
     }
   };
+
+  const handleImport = () => executeImport();
 
   const toggleAll = () => {
     if (selectedRows.size === parsedData.length) {
@@ -483,7 +604,9 @@ export default function ExpenseUpload() {
                     <h2 className="text-xl font-bold text-slate-900">IMPORT TRANSACTIONS</h2>
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                        {step === 'upload' ? 'Step 1: Upload Data' : `Step 2: Preview records`}
+                        {step === 'upload' ? 'Step 1: Upload Data' : 
+                         step === 'create-categories' ? 'Step 2: New Categories' :
+                         step === 'resolve' ? 'Step 3: Map Categories' : `Step 4: Preview records`}
                       </p>
                       {step === 'preview' && (
                         <>
@@ -506,7 +629,35 @@ export default function ExpenseUpload() {
               </div>
 
               {/* Content Area */}
-              <div className="flex-1 overflow-y-auto p-8">
+              <div className="flex-1 overflow-y-auto p-8 relative">
+                {(isSaving || isProcessing) && (
+                  <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-50 flex flex-col items-center justify-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-white shadow-xl flex items-center justify-center border border-slate-100">
+                      <Loader2 size={32} className="animate-spin text-[#86BC24]" />
+                    </div>
+                    <div className="flex flex-col items-center gap-1 text-center">
+                      <p className="text-sm font-bold text-slate-900 uppercase tracking-widest">
+                        {isSaving ? 'Importing Data' : 'Processing File'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest animate-pulse">
+                        {isSaving ? 'Writing to database...' : 'Analyzing records...'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {importResult && (
+                  <div className="absolute inset-x-8 top-8 z-[60] p-6 bg-[#86BC24] text-white rounded-2xl shadow-xl animate-in zoom-in-95 fade-in duration-300">
+                    <div className="flex items-center gap-4">
+                       <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                         <CheckCircle2 size={24} />
+                       </div>
+                       <div>
+                         <h3 className="text-lg font-bold">Import Result</h3>
+                         <p className="text-sm text-white/90 font-medium">{importResult}</p>
+                       </div>
+                    </div>
+                  </div>
+                )}
                 {step === 'upload' ? (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -568,7 +719,7 @@ export default function ExpenseUpload() {
                       </div>
                     </div>
 
-                    {feedback && (
+                    {feedback && step === 'upload' && (
                       <div className={cn(
                         "p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
                         feedback.type === 'success' ? "bg-green-50 text-green-700 border border-green-100" : "bg-red-50 text-red-700 border border-red-100"
@@ -578,9 +729,159 @@ export default function ExpenseUpload() {
                       </div>
                     )}
                   </div>
+                ) : step === 'create-categories' ? (
+                  <div className="space-y-6">
+                    <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center gap-3">
+                      <Settings2 size={20} className="text-indigo-600" />
+                      <div>
+                        <h4 className="text-sm font-bold text-indigo-900">New Category Setup</h4>
+                        <p className="text-xs text-indigo-700">We found new categories in your file. Define them now or skip to map them to existing ones.</p>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-100 rounded-xl shadow-sm overflow-hidden bg-white">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category Name</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Solution: Create New?</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {unresolvedNames.map(name => (
+                            <tr key={name} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4">
+                                <span className={cn(
+                                  "text-sm font-bold",
+                                  newCategorySettings[name]?.create ? "text-slate-900" : "text-slate-300 line-through"
+                                )}>{name}</span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex items-center justify-center gap-3">
+                                  <input 
+                                   type="checkbox" 
+                                   id={`create-${name}`}
+                                   checked={newCategorySettings[name]?.create}
+                                   onChange={(e) => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], create: e.target.checked } }))}
+                                   className="rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] w-4 h-4 cursor-pointer"
+                                  />
+                                  <label htmlFor={`create-${name}`} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">
+                                    {newCategorySettings[name]?.create ? 'Create' : 'Skip/Map'}
+                                  </label>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    disabled={!newCategorySettings[name]?.create}
+                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Income' } }))}
+                                    className={cn(
+                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
+                                      newCategorySettings[name]?.type === 'Income'
+                                        ? "bg-green-500 text-white border-green-500"
+                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                    )}
+                                  >
+                                    Income
+                                  </button>
+                                  <button 
+                                    disabled={!newCategorySettings[name]?.create}
+                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Expense' } }))}
+                                    className={cn(
+                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
+                                      newCategorySettings[name]?.type === 'Expense'
+                                        ? "bg-red-500 text-white border-red-500"
+                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                    )}
+                                  >
+                                    Expense
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {feedback && step === 'create-categories' && (
+                      <div className={cn(
+                        "p-4 rounded-xl flex items-center gap-3",
+                        feedback.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                      )}>
+                        <p className="text-sm font-medium">{feedback.message}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : step === 'resolve' ? (
+                  <div className="space-y-6">
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
+                      <AlertCircle size={20} className="text-amber-600" />
+                      <div>
+                        <h4 className="text-sm font-bold text-amber-900">Unresolved Categories Detected</h4>
+                        <p className="text-xs text-amber-700">The following categories were found in your file but don't exist in your budget yet. Choose how to handle them.</p>
+                      </div>
+                    </div>
+                    <div className="border border-slate-100 rounded-xl shadow-sm overflow-hidden bg-white">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Found in File</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {unresolvedNames.filter(name => !newCategorySettings[name]?.create).map(name => (
+                            <tr key={name} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4">
+                                <span className="text-sm font-bold text-slate-900">{name}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-4">
+                                  <button 
+                                    onClick={() => setResolutions(prev => ({ ...prev, [name]: { type: 'create' } }))}
+                                    className={cn(
+                                      "px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border",
+                                      resolutions[name]?.type === 'create' 
+                                        ? "bg-[#86BC24] text-white border-[#86BC24] shadow-sm" 
+                                        : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                                    )}
+                                  >
+                                    Create New
+                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase">or</span>
+                                    <div className="relative">
+                                      <select 
+                                        value={resolutions[name]?.type === 'map' ? resolutions[name]?.target : ''}
+                                        onChange={(e) => setResolutions(prev => ({ ...prev, [name]: { type: 'map', target: e.target.value } }))}
+                                        className={cn(
+                                          "p-2 bg-white border rounded-lg text-xs font-bold outline-none appearance-none pr-8 min-w-[200px]",
+                                          resolutions[name]?.type === 'map' ? "border-[#86BC24] text-[#86BC24]" : "border-slate-200 text-slate-500"
+                                        )}
+                                      >
+                                        <option value="">Map to Existing...</option>
+                                        {finData.budgets.map(b => (
+                                          <option key={b.id} value={b.name}>{b.name}</option>
+                                        ))}
+                                      </select>
+                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                        <ArrowDown size={10} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-6">
-                     <div className="overflow-x-auto border border-slate-100 rounded-xl shadow-sm">
+                     <div className="overflow-x-scroll border border-slate-100 rounded-xl shadow-sm">
                        <table className="w-full text-left border-collapse min-w-[700px]">
                          <thead>
                            <tr className="bg-slate-50/80 border-b border-slate-100">
@@ -610,7 +911,7 @@ export default function ExpenseUpload() {
                             {parsedData.map((row) => (
                               <tr key={row.id} className={cn(
                                 "group transition-colors",
-                                selectedRows.has(row.id) ? "bg-white" : "bg-slate-50/30 opacity-60"
+                                !row.category ? "bg-red-50/80" : (selectedRows.has(row.id) ? "bg-white" : "bg-slate-50/30 opacity-60")
                               )}>
                                 <td className="px-4 py-3">
                                   <input 
@@ -623,8 +924,8 @@ export default function ExpenseUpload() {
                                 <td className="px-4 py-3 text-[11px] font-mono text-slate-600 whitespace-nowrap">
                                   {row.date}
                                 </td>
-                                <td className="px-4 py-3 min-w-[200px]">
-                                  <p className="text-[11px] font-bold text-slate-900 truncate">{row.description}</p>
+                                <td className="px-4 py-3 max-w-[200px]">
+                                  <p className="text-[11px] font-bold text-slate-900 truncate" title={row.description}>{row.description}</p>
                                 </td>
                                 <td className="px-4 py-3 text-[10px] font-mono text-slate-400">
                                   {row.reference || '-'}
@@ -715,16 +1016,46 @@ export default function ExpenseUpload() {
                 <div className="flex items-center gap-6">
                 </div>
                 <div className="flex items-center gap-3">
-                  {step === 'preview' && (
+                  {step !== 'upload' && !importResult && (
                     <button 
-                      onClick={() => setStep('upload')}
+                      onClick={() => {
+                        if (step === 'preview') setStep('resolve');
+                        else if (step === 'resolve') setStep('create-categories');
+                        else setStep('upload');
+                      }}
                       className="px-6 py-2.5 h-10 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-orange-100 transition-all flex items-center gap-2"
                     >
                       <ChevronLeft size={16} />
                       Back
                     </button>
                   )}
-                  {step === 'preview' ? (
+                  {step === 'create-categories' ? (
+                     <button 
+                      onClick={handleCreateCategories}
+                      disabled={isCreatingCategories}
+                      className="px-8 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
+                    >
+                      {isCreatingCategories ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          Create & Import
+                          <ChevronRight size={16} />
+                        </>
+                      )}
+                    </button>
+                  ) : step === 'resolve' ? (
+                     <button 
+                      onClick={finalizeResolution}
+                      className="px-8 h-10 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
+                    >
+                      Complete Import
+                      <ChevronRight size={16} />
+                    </button>
+                  ) : step === 'preview' ? (
                     <button 
                       onClick={handleImport}
                       disabled={isSaving || selectedRows.size === 0}

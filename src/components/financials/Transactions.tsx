@@ -128,6 +128,20 @@ export default function Transactions() {
   const [pagedData, setPagedData] = useState<{ items: any[], totalCount: number }>({ items: [], totalCount: 0 });
   const [isFetching, setIsFetching] = useState(false);
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAdding(false);
+        setIsEditing(false);
+        setEditingId(null);
+        setDeletingId(null);
+        resetForm();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
   // Debounce search term
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -708,7 +722,7 @@ export default function Transactions() {
                       <td colSpan={settings?.isGstEnabled ? 8 : 6} className="px-6 py-2 border-y border-white/10">
                         <div className="flex items-center gap-3">
                           <span className="text-white text-[10px] font-black uppercase tracking-[0.25em]">
-                            Income Flow
+                            income
                           </span>
                         </div>
                       </td>
@@ -732,7 +746,7 @@ export default function Transactions() {
                       <td colSpan={settings?.isGstEnabled ? 8 : 6} className="px-6 py-2 border-y border-white/10">
                          <div className="flex items-center gap-3">
                            <span className="text-white text-[10px] font-black uppercase tracking-[0.25em]">
-                             Expense Outflow
+                             EXPENSE
                            </span>
                          </div>
                       </td>

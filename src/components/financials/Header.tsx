@@ -66,34 +66,34 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
            <div 
              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
              className={cn(
-               "flex items-center gap-4 px-6 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl hover:bg-white/20 transition-all cursor-pointer w-96 shadow-sm",
-               isDropdownOpen ? "bg-white/25 shadow-md border-white/40" : ""
+               "flex items-center gap-4 px-6 py-3 bg-[#F5F5F5] border border-white/20 rounded-2xl hover:bg-white transition-all cursor-pointer w-96 shadow-sm",
+               isDropdownOpen ? "bg-white shadow-md border-white/40" : ""
              )}
            >
               <button 
                 onClick={(e) => { e.stopPropagation(); onSettingsClick(); setIsDropdownOpen(false); }}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-white bg-white/20 hover:bg-white/30 transition-colors shrink-0"
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-[#86BC24] bg-white shadow-sm hover:bg-slate-50 transition-colors shrink-0"
                 title="Business Settings"
               >
                 <Building2 size={24} />
               </button>
               
               <div className="flex flex-col flex-1 min-w-0">
-                 <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest leading-none mb-1">Active Business</span>
-                 <span className="text-base font-bold text-white truncate leading-tight">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Business</span>
+                 <span className="text-base font-bold text-slate-900 truncate leading-tight">
                     {activeBusiness?.name || 'Select Business'}
                  </span>
               </div>
-
+ 
               <div className="flex items-center gap-2 shrink-0">
                  <button 
                   onClick={(e) => { e.stopPropagation(); onSettingsClick(); setIsDropdownOpen(false); }}
-                  className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                  className="p-2 text-slate-400 hover:text-[#86BC24] hover:bg-[#86BC24]/10 rounded-lg transition-all"
                   title="Business Settings"
                  >
                    <Settings size={18} />
                  </button>
-                 <ChevronDown size={18} className={cn("text-white/60 transition-transform", isDropdownOpen ? "rotate-180 text-white" : "")} />
+                 <ChevronDown size={18} className={cn("text-slate-400 transition-transform", isDropdownOpen ? "rotate-180 text-slate-900" : "")} />
               </div>
            </div>
 

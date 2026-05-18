@@ -88,6 +88,8 @@ export const transactionApi = {
   update: async (id: string, data: any) => await api.post('transaction', { ...data, Id: id }),
   listPaged: async (businessId: string, params: { startDate?: string; endDate?: string; page?: number; pageSize?: number; searchText?: string }) => 
     await api.get(`business/${businessId}/transactions/paged`, { params }),
+  import: async (businessId: string, transactions: any[]) => 
+    await api.post(`transactions/import/${businessId}`, transactions),
 };
 
 export const ruleApi = {

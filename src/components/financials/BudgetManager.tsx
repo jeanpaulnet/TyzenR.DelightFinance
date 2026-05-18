@@ -37,6 +37,18 @@ export default function BudgetManager() {
     }
   }, [user]);
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAdding(false);
+        setEditingId(null);
+        setDeleteConfirm(null);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
   // Derived list of all unique categories ever used across any year
   const allCategories = useMemo(() => {
     const categories = new Set<string>();
@@ -49,13 +61,13 @@ export default function BudgetManager() {
   // Map each unique category to its budget in the selected year, 
   // or a fallback to its most recent budget amount
   const categoryStats = useMemo(() => {
-    return allCategories.map(catName => {
+    const stats = allCategories.map(catName => {
       if (!catName) return null;
       const yearBudget = finData.budgets.find(b => 
         b.year === selectedYear && (b.name || '').toLowerCase() === catName.toLowerCase()
       );
 
-      // Find most recent amount for this specific category as a default
+      // Find most recent budget for this specific category as a default
       const allForCategory = finData.budgets.filter(b => (b.name || '').toLowerCase() === catName.toLowerCase());
       const mostRecent = allForCategory.reduce((prev, curr) => {
         if (!prev) return curr;
@@ -78,9 +90,15 @@ export default function BudgetManager() {
       };
     }).filter(stat => {
       if (!stat) return false;
-      // In the Categories view, we only show Income and Expense types.
-      // Asset and Liability items are handled in the Net Worth view.
-      return stat.data.type === 'Income' || stat.data.type === 'Expense';
+      // Show all major types: Income, Expense, Asset, Liability
+      return stat.data.type === 'Income' || stat.data.type === 'Expense' || stat.data.type === 'Asset' || stat.data.type === 'Liability';
+    }) as any[];
+
+    // Sort: Incomes first, then Expenses
+    return stats.sort((a, b) => {
+      if (a.data.type === 'Income' && b.data.type !== 'Income') return -1;
+      if (a.data.type !== 'Income' && b.data.type === 'Income') return 1;
+      return a.name.localeCompare(b.name);
     });
   }, [allCategories, finData.budgets, selectedYear]);
 
@@ -375,12 +393,14 @@ export default function BudgetManager() {
             >
               <option value="Income">Income</option>
               <option value="Expense">Expense</option>
+              <option value="Asset">Asset</option>
+              <option value="Liability">Liability</option>
             </select>
           </div>
           {newBudget.type !== 'Income' && (
             <div className="space-y-2">
               <label className="block text-[10px] font-bold text-white uppercase tracking-widest">
-                {newBudget.type === 'Asset' ? `AS ON ${selectedYear}` : `AMOUNT for ${selectedYear}`}
+                {(newBudget.type === 'Asset' || newBudget.type === 'Liability') ? `VALUE AS ON ${selectedYear}` : `BUDGET for ${selectedYear}`}
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic">
@@ -446,226 +466,248 @@ export default function BudgetManager() {
         </motion.form>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {categoryStats.map((stat) => (
-          <div key={stat.data.id} className={cn(
-            "border rounded-lg p-5 shadow-sm group transition-all relative overflow-hidden flex flex-col justify-between min-h-[180px]",
-            stat.isActive ? (
-              stat.data.type === 'Income' ? "bg-green-50 border-green-100/80 hover:border-green-300" :
-              stat.data.type === 'Asset' ? "bg-blue-50 border-blue-100/80 hover:border-blue-300" :
-              stat.data.type === 'Liability' ? "bg-orange-50 border-orange-100/80 hover:border-orange-300" :
-              "bg-red-50 border-red-100/80 hover:border-red-300" // Expense
-            ) : "bg-white border-dashed border-slate-200 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 bg-slate-50/50"
-          )}>
-            {editingId === stat.data.id ? (
-              <form onSubmit={handleUpdate} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Editing Category</label>
-                  <input 
-                    value={editBudget.name} onChange={e => {
-                      setEditBudget({...editBudget, name: e.target.value});
-                      setDuplicateError(null);
-                    }}
-                    className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24]"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Type</label>
-                    <select 
-                      value={editBudget.type} 
-                      onChange={e => setEditBudget({...editBudget, type: e.target.value})}
-                      className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24] font-bold"
-                      style={{ 
-                        color: 
-                          editBudget.type === 'Income' ? '#16A34A' : '#DC2626' 
-                      }}
-                    >
-                      <option value="Income" style={{ color: '#16A34A' }}>Income</option>
-                      <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
-                    </select>
-                  </div>
-                  {(editBudget.type === 'Asset' || editBudget.type === 'Liability') && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                        {editBudget.type === 'Asset' ? `AS ON ${selectedYear}` : 'Target Value'}
-                      </label>
-                      <input 
-                        type="number" step="0.01" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value) || 0})}
-                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md text-sm font-mono outline-none focus:border-blue-500"
-                      />
-                    </div>
-                  )}
-                  {editBudget.type === 'Expense' && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">AMOUNT for {selectedYear}</label>
-                      <input 
-                        type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
-                        className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
-                      />
-                    </div>
-                  )}
-                  {settings?.isGstEnabled && (
-                    <div className="mt-2 space-y-3 p-3 bg-slate-50 rounded-lg border border-slate-200 col-span-2">
-                      <div className="flex gap-3">
-                        <div className="flex-1 space-y-1">
-                          <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST (%)</label>
-                          <input 
-                            type="number" value={editBudget.gstRate} onChange={e => setEditBudget({...editBudget, gstRate: parseFloat(e.target.value) || 0})}
-                            className="w-full p-2 bg-white border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
-                          />
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Deductions</label>
-                          <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
-                            {(editBudget.amount - (editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100)))).toFixed(2)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Final Amount</label>
-                        <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
-                          {(editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100))).toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {duplicateError && (
-                  <motion.p 
-                    initial={{ opacity: 0, x: -10 }} 
-                    animate={{ opacity: 1, x: 0 }} 
-                    className="text-[10px] font-bold text-red-500 uppercase tracking-wider"
-                  >
-                    {duplicateError}
-                  </motion.p>
-                )}
-                <div className="flex gap-2">
-                  <button type="submit" className="flex-1 bg-[#86BC24] text-white py-1.5 rounded-md text-xs font-bold uppercase tracking-widest hover:bg-[#75A51F]">Save</button>
-                  <button type="button" onClick={() => setEditingId(null)} className="flex-1 bg-slate-100 text-slate-500 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest hover:bg-slate-200">Cancel</button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <div className="absolute top-0 right-0 p-2 flex gap-1 transition-opacity">
-                    {stat.isActive ? (
-                      <>
-                        <button 
-                          onClick={() => startEdit(stat.data)} 
-                          className="p-1 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
-                          title="Edit Category"
-                        >
-                            <Edit2 size={14} />
-                        </button>
-                        <button 
-                          onClick={() => setDeleteConfirm({ id: stat.data.id, category: stat.name, isActive: true })} 
-                          className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
-                          title="Delete Category"
-                        >
-                            <Trash2 size={14} />
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex gap-2 items-center">
-                        <button 
-                          onClick={() => setDeleteConfirm({ id: null, category: stat.name, isActive: false })}
-                          className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
-                          title="Purge Category"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter px-2 py-0.5 bg-slate-100 rounded">Not Set for {selectedYear}</div>
-                      </div>
-                    )}
-                </div>
-                <div className="flex items-center gap-3 mb-4">
-                   <div className={cn(
-                     "w-8 h-8 rounded border flex items-center justify-center transition-colors shadow-sm",
-                     stat.isActive ? (
-                       stat.data.type === 'Income' ? "text-green-600 border-green-200 bg-white" :
-                       stat.data.type === 'Asset' ? "text-blue-600 border-blue-200 bg-white" :
-                       stat.data.type === 'Liability' ? "text-orange-600 border-orange-200 bg-white" :
-                       "text-red-600 border-red-200 bg-white"
-                     ) : "text-slate-300 border-slate-200 bg-white/50"
-                   )}>
-                      {(() => {
-                        if (!stat.isActive) return <Target size={18} />;
-                        switch(stat.data.type) {
-                          case 'Income': return <TrendingUp size={18} />;
-                          case 'Asset': return <Building2 size={18} />;
-                          case 'Liability': return <ShieldAlert size={18} />;
-                          default: return <Receipt size={18} />;
-                        }
-                      })()}
-                   </div>
-                   <div className="flex-1">
-                      <p className="text-lg font-bold text-[#1E293B] tracking-tight leading-none">{stat.name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={cn(
-                          "text-[9px] font-bold uppercase tracking-widest px-1.5 py-1 rounded-full border leading-none bg-white/80 backdrop-blur-sm shadow-xs",
-                          stat.isActive ? (
-                            stat.data.type === 'Income' ? "text-green-600 border-green-200" :
-                            stat.data.type === 'Asset' ? "text-blue-600 border-blue-200" :
-                            stat.data.type === 'Liability' ? "text-orange-600 border-orange-200" :
-                            "text-red-600 border-red-200"
-                          ) : "text-slate-300 border-slate-100"
-                        )}>
-                          {stat.isActive ? (stat.data.type || 'Expense') : 'General'}
-                        </span>
-                        {stat.isActive && stat.data.type === 'Income' && settings?.isGstEnabled && (
-                          <span className="text-[9px] font-bold text-[#86BC24] uppercase tracking-wider bg-[#86BC24]/5 px-1.5 py-0.5 rounded border border-[#86BC24]/10">
-                            GST: {stat.data.gstRate || 0}%
-                          </span>
-                        )}
-                      </div>
-                   </div>
-                </div>
-                
-                 {stat.isActive && stat.data.type === 'Expense' ? (
-                  <div className="bg-slate-50/80 rounded p-3 mb-4">
-                     <div className="flex justify-between items-center text-[10px] font-bold text-[#64748B] uppercase tracking-widest mb-1">
-                        <span>AMOUNT for {selectedYear}</span>
-                        <span className="text-[#86BC24] font-mono">{formatCurrency(stat.data.amount, currencyCode)}</span>
-                     </div>
-                     <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
-                        <div className="w-3/4 h-full bg-[#86BC24]"></div>
-                     </div>
-                  </div>
-                ) : (stat.isActive && stat.data.type === 'Asset') ? (
-                  <div className="bg-blue-50/50 rounded p-3 mb-4 border border-blue-100">
-                    <div className="flex justify-between items-center text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">
-                      <span>AS ON {selectedYear}</span>
-                      <span className="text-blue-700 font-mono text-xs">{formatCurrency(stat.data.amount || 0, currencyCode)}</span>
-                    </div>
-                    <div className="text-[9px] text-blue-400 font-medium italic">As of {selectedYear} / Month {stat.data.month}</div>
-                  </div>
-                ) : (stat.isActive && stat.data.type === 'Income') ? (
-                  <div className="flex-1 flex flex-col justify-center mb-4 italic text-[11px] text-slate-400">
-                    No target amount for Income
-                  </div>
-                ) : stat.isActive ? (
-                  <div className="flex-1 mb-4" />
-                ) : (
-                  <div className="flex-1 flex flex-col justify-end">
-                      <button 
-                        onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount, stat.data.type || 'Expense', stat.data.gstRate || 0)}
-                        className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-[#86BC24] hover:text-[#86BC24] transition-all flex items-center justify-center gap-2 group/btn"
-                      >
-                        <Plus size={12} className="group-hover/btn:scale-125 transition-transform" />
-                        Set as {stat.data.type || 'Expense'} {stat.fallbackAmount > 0 ? `(${formatCurrency(stat.fallbackAmount, currencyCode)})` : ""}
-                      </button>
-                  </div>
-                )}
-
-                {stat.isActive && (
-                  <div className="flex items-center justify-end text-[10px] font-bold uppercase tracking-widest text-[#64748B] pt-4 border-t border-slate-50">
-                    <span className="font-mono italic text-[9px] lowercase">approx {formatCurrency(stat.data.budget / 30, currencyCode)}/day</span>
-                  </div>
-                )}
-              </>
+      <div className="space-y-12">
+        {categoryStats.length === 0 && !isAdding ? (
+          <div className="py-20 text-center space-y-6">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+              <Wallet size={32} />
+            </div>
+            <div>
+              <p className="text-slate-900 font-bold">No categories for {selectedYear}</p>
+              <p className="text-slate-500 text-sm">Create amounts for this year or copy from a previous period.</p>
+            </div>
+            {recentYearWithData && recentYearWithData !== selectedYear && (
+              <button 
+                onClick={handleCopyFromRecent}
+                disabled={copying}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-white border border-[#86BC24] text-[#86BC24] rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-[#86BC24] hover:text-white transition-all shadow-sm disabled:opacity-50"
+              >
+                {copying ? <Activity size={16} className="animate-spin" /> : <Copy size={16} />}
+                Copy from {recentYearWithData}
+              </button>
             )}
           </div>
-        ))}
+        ) : (
+          <>
+            {[
+              { type: 'Income', label: 'Income' },
+              { type: 'Expense', label: 'Expense' },
+              { type: 'Asset', label: 'Asset' },
+              { type: 'Liability', label: 'Liability' }
+            ].map(group => {
+              const items = categoryStats.filter(s => s.data.type === group.type);
+              if (items.length === 0) return null;
+              return (
+                <div key={group.type} className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">{group.label} Categories</h2>
+                    <div className="flex-1 h-px bg-slate-100"></div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {items.map((stat) => (
+                      <div key={stat.data.id} className={cn(
+                        "border rounded-lg p-2.5 shadow-sm group transition-all relative overflow-hidden flex flex-col justify-center min-h-[70px]",
+                        stat.isActive ? (
+                          stat.data.type === 'Income' ? "bg-green-50 border-green-100/80 hover:border-green-300" :
+                          stat.data.type === 'Asset' ? "bg-blue-50 border-blue-100/80 hover:border-blue-300" :
+                          stat.data.type === 'Liability' ? "bg-orange-50 border-orange-100/80 hover:border-orange-300" :
+                          "bg-red-50 border-red-100/80 hover:border-red-300" // Expense
+                        ) : "bg-white border-dashed border-slate-200 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 bg-slate-50/50"
+                      )}>
+                        {editingId === stat.data.id ? (
+                          <form onSubmit={handleUpdate} className="space-y-4">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Editing Category</label>
+                              <input 
+                                value={editBudget.name} onChange={e => {
+                                  setEditBudget({...editBudget, name: e.target.value});
+                                  setDuplicateError(null);
+                                }}
+                                className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24]"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Type</label>
+                                <select 
+                                  value={editBudget.type} 
+                                  onChange={e => setEditBudget({...editBudget, type: e.target.value})}
+                                  className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm outline-none focus:border-[#86BC24] font-bold"
+                                  style={{ 
+                                    color: 
+                                      editBudget.type === 'Income' ? '#16A34A' : 
+                                      editBudget.type === 'Asset' ? '#2563EB' :
+                                      editBudget.type === 'Liability' ? '#D97706' :
+                                      '#DC2626' 
+                                  }}
+                                >
+                                  <option value="Income" style={{ color: '#16A34A' }}>Income</option>
+                                  <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
+                                  <option value="Asset" style={{ color: '#2563EB' }}>Asset</option>
+                                  <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
+                                </select>
+                              </div>
+                              {(editBudget.type === 'Asset' || editBudget.type === 'Liability') && (
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                    VALUE AS ON {selectedYear}
+                                  </label>
+                                  <input 
+                                    type="number" step="0.01" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value) || 0})}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md text-sm font-mono outline-none focus:border-blue-500"
+                                  />
+                                </div>
+                              )}
+                              {editBudget.type === 'Expense' && (
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">BUDGET for {selectedYear}</label>
+                                  <input 
+                                    type="number" value={editBudget.amount} onChange={e => setEditBudget({...editBudget, amount: parseFloat(e.target.value)})}
+                                    className="w-full p-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
+                                  />
+                                </div>
+                              )}
+                              {settings?.isGstEnabled && (
+                                <div className="mt-2 space-y-3 p-3 bg-slate-50 rounded-lg border border-slate-200 col-span-2">
+                                  <div className="flex gap-3">
+                                    <div className="flex-1 space-y-1">
+                                      <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST (%)</label>
+                                      <input 
+                                        type="number" value={editBudget.gstRate} onChange={e => setEditBudget({...editBudget, gstRate: parseFloat(e.target.value) || 0})}
+                                        className="w-full p-2 bg-white border border-[#E2E8F0] rounded-md text-sm font-mono outline-none focus:border-[#86BC24]"
+                                      />
+                                    </div>
+                                    <div className="flex-1 space-y-1">
+                                      <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Deductions</label>
+                                      <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
+                                        {(editBudget.amount - (editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100)))).toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">Final Amount</label>
+                                    <div className="p-2 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-md text-sm font-mono text-[#86BC24]">
+                                      {(editBudget.amount / (1 + ((editBudget.gstRate || 0) / 100))).toFixed(2)}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {duplicateError && (
+                              <motion.p 
+                                initial={{ opacity: 0, x: -10 }} 
+                                animate={{ opacity: 1, x: 0 }} 
+                                className="text-[10px] font-bold text-red-500 uppercase tracking-wider"
+                              >
+                                {duplicateError}
+                              </motion.p>
+                            )}
+                            <div className="flex gap-2">
+                              <button type="submit" className="flex-1 bg-[#86BC24] text-white py-1.5 rounded-md text-xs font-bold uppercase tracking-widest hover:bg-[#75A51F]">Save</button>
+                              <button type="button" onClick={() => setEditingId(null)} className="flex-1 bg-slate-100 text-slate-500 py-1.5 rounded-md text-xs font-bold uppercase tracking-widest hover:bg-slate-200">Cancel</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <>
+                            <div className="absolute top-0 right-0 p-2 flex gap-1 transition-opacity">
+                                {stat.isActive ? (
+                                  <>
+                                    <button 
+                                      onClick={() => startEdit(stat.data)} 
+                                      className="p-1 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
+                                      title="Edit Category"
+                                    >
+                                        <Edit2 size={14} />
+                                    </button>
+                                    <button 
+                                      onClick={() => setDeleteConfirm({ id: stat.data.id, category: stat.name, isActive: true })} 
+                                      className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                                      title="Delete Category"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div className="flex gap-2 items-center">
+                                    <button 
+                                      onClick={() => setDeleteConfirm({ id: null, category: stat.name, isActive: false })}
+                                      className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                                      title="Purge Category"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter px-2 py-0.5 bg-slate-100 rounded">Not Set for {selectedYear}</div>
+                                  </div>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                               <div className={cn(
+                                 "w-8 h-8 rounded border flex items-center justify-center transition-colors shadow-sm shrink-0",
+                                 stat.isActive ? (
+                                   stat.data.type === 'Income' ? "text-green-600 border-green-200 bg-white" :
+                                   stat.data.type === 'Asset' ? "text-blue-600 border-blue-200 bg-white" :
+                                   stat.data.type === 'Liability' ? "text-orange-600 border-orange-200 bg-white" :
+                                   "text-red-600 border-red-200 bg-white"
+                                 ) : "text-slate-300 border-slate-200 bg-white/50"
+                               )}>
+                                  {(() => {
+                                    if (!stat.isActive) return <Target size={16} />;
+                                    switch(stat.data.type) {
+                                      case 'Income': return <TrendingUp size={16} />;
+                                      case 'Asset': return <Building2 size={16} />;
+                                      case 'Liability': return <ShieldAlert size={16} />;
+                                      default: return <Receipt size={16} />;
+                                    }
+                                  })()}
+                               </div>
+                               <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-[#1E293B] tracking-tight leading-tight truncate">{stat.name}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className={cn(
+                                      "text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full border leading-none bg-white/80 backdrop-blur-sm shadow-xs",
+                                      stat.isActive ? (
+                                        stat.data.type === 'Income' ? "text-green-600 border-green-200" :
+                                        stat.data.type === 'Asset' ? "text-blue-600 border-blue-200" :
+                                        stat.data.type === 'Liability' ? "text-orange-600 border-orange-200" :
+                                        "text-red-600 border-red-200"
+                                      ) : "text-slate-300 border-slate-100"
+                                    )}>
+                                      {stat.isActive ? (stat.data.type || 'Expense') : 'General'}
+                                    </span>
+                                    {stat.isActive && (
+                                      <span className={cn(
+                                        "text-[10px] font-mono font-bold",
+                                        stat.data.type === 'Income' ? "text-green-600" :
+                                        stat.data.type === 'Asset' ? "text-blue-600" :
+                                        stat.data.type === 'Liability' ? "text-orange-600" :
+                                        "text-[#86BC24]" // Expense
+                                      )}>
+                                        {formatCurrency(stat.data.amount, currencyCode)}
+                                      </span>
+                                    )}
+                                  </div>
+                               </div>
+                               
+                               {!stat.isActive && (
+                                  <button 
+                                    onClick={() => handleCreateForYear(stat.name, stat.fallbackAmount, stat.data.type || 'Expense', stat.data.gstRate || 0)}
+                                    className="py-1 px-3 bg-white border border-slate-200 text-slate-600 rounded-lg text-[8px] font-bold uppercase tracking-widest hover:border-[#86BC24] hover:text-[#86BC24] transition-all flex items-center justify-center gap-1 group/btn"
+                                  >
+                                    <Plus size={10} />
+                                    Set
+                                  </button>
+                               )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
 
         <AnimatePresence>
           {deleteConfirm && (
@@ -701,7 +743,7 @@ export default function BudgetManager() {
                       disabled={isDeleting}
                       className="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold uppercase tracking-widest hover:border-[#86BC24] transition-all flex items-center justify-center gap-3 group"
                     >
-                      <span>Remove amount for {selectedYear} only</span>
+                      <span>Remove budget for {selectedYear} only</span>
                       <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                   )}
@@ -776,27 +818,6 @@ export default function BudgetManager() {
             </div>
           )}
         </AnimatePresence>
-        {categoryStats.length === 0 && !isAdding && (
-          <div className="col-span-full py-20 text-center space-y-6">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-              <Wallet size={32} />
-            </div>
-            <div>
-              <p className="text-slate-900 font-bold">No categories for {selectedYear}</p>
-              <p className="text-slate-500 text-sm">Create amounts for this year or copy from a previous period.</p>
-            </div>
-            {recentYearWithData && recentYearWithData !== selectedYear && (
-              <button 
-                onClick={handleCopyFromRecent}
-                disabled={copying}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-white border border-[#86BC24] text-[#86BC24] rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-[#86BC24] hover:text-white transition-all shadow-sm disabled:opacity-50"
-              >
-                {copying ? <Activity size={16} className="animate-spin" /> : <Copy size={16} />}
-                Copy from {recentYearWithData}
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

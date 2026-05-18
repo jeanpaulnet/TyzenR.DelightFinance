@@ -3,14 +3,7 @@ import { useApp, getBusinessSettings } from '../../AppContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { Building2, Coins, Clock, Trash2, Save, AlertTriangle, Loader2, CheckCircle2, HelpCircle, User } from 'lucide-react';
 import { cn } from '../../lib/utils';
-
-const CURRENCIES = [
-  { code: 'USD', name: 'US Dollar' },
-  { code: 'EUR', name: 'Euro' },
-  { code: 'GBP', name: 'British Pound' },
-  { code: 'INR', name: 'Indian Rupee' },
-  { code: 'JPY', name: 'Japanese Yen' },
-];
+import { CURRENCIES } from '../../constants';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -60,6 +53,16 @@ export default function BusinessSettings() {
       });
     }
   }, [activeBiz]);
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDeleteConfirm(false);
+    };
+    if (showDeleteConfirm) {
+      window.addEventListener('keydown', handleEsc);
+    }
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showDeleteConfirm]);
 
   if (!activeBiz || !formData) return null;
 
@@ -158,6 +161,23 @@ export default function BusinessSettings() {
                   onChange={e => setFormData({...formData, name: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                   <Coins size={12} /> Currency
+                </label>
+                <select 
+                   value={formData.currency}
+                   onChange={e => setFormData({...formData, currency: e.target.value})}
+                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all appearance-none cursor-pointer"
+                >
+                   {CURRENCIES.map(c => (
+                      <option key={c.code} value={c.code}>
+                         {c.code} ({c.symbol}) - {c.name}
+                      </option>
+                   ))}
+                </select>
               </div>
 
               <div className="space-y-4">

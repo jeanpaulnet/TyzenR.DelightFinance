@@ -33,6 +33,11 @@ export default function HistoryModal({ isOpen, onClose, title, resourceId, userI
   useEffect(() => {
     if (!isOpen) return;
 
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+
     setLoading(true);
     let q;
     if (resourceId) {
@@ -65,7 +70,10 @@ export default function HistoryModal({ isOpen, onClose, title, resourceId, userI
         setLoading(false);
     });
 
-    return unsub;
+    return () => {
+      window.removeEventListener('keydown', handleEsc);
+      unsub();
+    };
   }, [isOpen, resourceId, userId]);
 
   return (

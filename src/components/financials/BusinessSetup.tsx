@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useApp } from '../../AppContext';
 import { businessApi, categoryApi, transactionApi } from '../../lib/api';
 import { motion } from 'motion/react';
-import { Building2, Wallet, TrendingUp, MessageSquare, ChevronRight, Loader2, X, User, PieChart, HelpCircle, LogOut } from 'lucide-react';
+import { Building2, Wallet, TrendingUp, MessageSquare, ChevronRight, Loader2, X, User, PieChart, HelpCircle, LogOut, Coins } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
+import { CURRENCIES } from '../../constants';
 
 export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
   const { user, businesses, refreshData, setActiveTab, setActiveBusinessId } = useApp();
@@ -187,6 +188,24 @@ export default function BusinessSetup({ onClose }: { onClose?: () => void }) {
                      placeholder={formData.type === 'Business' ? "e.g. Acme Corporation LLC" : "e.g. Personal Finances"}
                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all"
                   />
+               </div>
+
+               <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                     <Coins size={12} />
+                     Currency
+                  </label>
+                  <select 
+                     value={formData.currency}
+                     onChange={e => setFormData({...formData, currency: e.target.value})}
+                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] focus:ring-4 focus:ring-[#86BC24]/5 transition-all appearance-none cursor-pointer"
+                  >
+                     {CURRENCIES.map(c => (
+                        <option key={c.code} value={c.code}>
+                           {c.code} ({c.symbol}) - {c.name}
+                        </option>
+                     ))}
+                  </select>
                </div>
 
                <div className="space-y-4">
