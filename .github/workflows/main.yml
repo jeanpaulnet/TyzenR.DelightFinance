@@ -25,4 +25,4 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./build/  # The directory to upload
-          server-dir: ./public_html/  # Destination on your server
+          server-dir: ./delight.futurecaps.com/  # Destination on your server
