@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { useApp, getBusinessSettings } from '../../AppContext';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -38,23 +39,235 @@ interface ParsedTransaction {
 }
 
 const HEADER_KEYWORDS = {
-  date: ['date', 'timestamp', 'time', 'occured', 'day', 'period'],
-  amount: ['amount', 'value', 'price', 'total', 'sum', 'cost', 'charge', 'rate'],
-  income: ['credit', 'deposit', 'in', 'income', 'gain', 'plus', 'received'],
-  expense: ['debit', 'payment', 'withdrawal', 'out', 'expense', 'loss', 'minus', 'spent'],
-  description: ['description', 'desc', 'memo', 'details', 'payee', 'narrative', 'comment', 'name', 'item', 'vendor'],
-  category: ['category', 'cat', 'type', 'tag', 'group', 'label', 'class'],
-  reference: ['reference', 'ref', 'notes', 'id', 'transaction id', 'receipt', 'code', 'txid', 'voucher']
+  date: [
+    'date', 'timestamp', 'time', 'occured', 'day', 'period', 'txn date', 'booking date', 'value date', 
+    'tran. date', 'tran date', 'post date', 'transaction date', 'dt', 'txn_date', 'val_date', 'booking_date'
+  ],
+  amount: [
+    'amount', 'value', 'price', 'total', 'sum', 'cost', 'charge', 'rate', 'txn amount', 'amount (inr)', 
+    'amount(usd)', 'balance', 'closing balance', 'amt', 'amount (local)', 'amount (usd)', 'inr', 'usd', 
+    'rupees', 'euros', 'gbp', 'cad', 'aud', 'amount_inr', 'amount_usd'
+  ],
+  income: [
+    'credit', 'deposit', 'in', 'income', 'gain', 'plus', 'received', 'cr', 'deposit amount', 'credit amount', 
+    'cr amt', 'credits', 'deposit_amt', 'credit_amt', 'dep'
+  ],
+  expense: [
+    'debit', 'payment', 'withdrawal', 'out', 'expense', 'loss', 'minus', 'spent', 'dr', 'withdrawal amount', 
+    'debit amount', 'dr amt', 'debits', 'withdrawal_amt', 'debit_amt', 'withdrwl', 'wd'
+  ],
+  description: [
+    'description', 'desc', 'memo', 'details', 'payee', 'narrative', 'narration', 'particulars', 'remarks', 
+    'comment', 'name', 'item', 'vendor', 'reference', 'txn remarks', 'txn description', 'remark', 'party', 
+    'beneficiary', 'remitter', 'payee name'
+  ],
+  category: [
+    'category', 'cat', 'type', 'tag', 'group', 'label', 'class', 'industry'
+  ],
+  reference: [
+    'reference', 'ref', 'notes', 'id', 'transaction id', 'receipt', 'code', 'txid', 'voucher', 'cheque', 
+    'ref.', 'ref number', 'reference number', 'cheque/dd no.', 'ref_no', 'reference_no', 'chq'
+  ]
+};
+
+const parseRobustFloat = (val: any): number => {
+  if (val === undefined || val === null) return 0;
+  if (typeof val === 'number') return val;
+  // Replace weird spaces (including non-breaking spaces) with standard spaces
+  let str = String(val).replace(/[\u00A0\u1680\u180e\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/g, ' ').trim();
+  if (!str) return 0;
+
+  // Check for parenthesis representation of negative numbers, e.g., (1,234.50)
+  const isParenthesisNegative = /^\s*\(.+\)\s*$/.test(str);
+  
+  // Check if string ends with minus sign, e.g., 1,234.50-
+  const isTrailingNegative = str.endsWith('-');
+
+  // Standardize European vs US format before removing non-numeric chars
+  // Strip spaces and currency symbols first
+  let temp = str.replace(/[^0-9.,\-]/g, '');
+
+  const lastComma = temp.lastIndexOf(',');
+  const lastPeriod = temp.lastIndexOf('.');
+  
+  if (lastComma !== -1 && lastPeriod !== -1) {
+    if (lastComma > lastPeriod) {
+      // European: 1.234,56 -> 1234.56
+      temp = temp.replace(/\./g, '').replace(/,/g, '.');
+    } else {
+      // US: 1,234.56 -> 1234.56
+      temp = temp.replace(/,/g, '');
+    }
+  } else if (lastComma !== -1) {
+    // Only comma present: if it is followed by exactly 2 digits (or is decimal), replace with period
+    const match = temp.match(/,(\d{2})$/);
+    if (match || temp.indexOf(',') === temp.length - 3) {
+      temp = temp.replace(/,/g, '.');
+    } else {
+      temp = temp.replace(/,/g, '');
+    }
+  }
+
+  // Double check if we have any other non-numeric chars to strip out
+  let cleaned = temp.replace(/[^0-9.\-]/g, '');
+
+  let num = parseFloat(cleaned);
+  if (isNaN(num)) return 0;
+
+  if (isParenthesisNegative || isTrailingNegative) {
+    num = -Math.abs(num);
+  }
+
+  return num;
+};
+
+const parseRobustDate = (val: any): string => {
+  if (val === undefined || val === null) return new Date().toISOString().split('T')[0];
+  if (val instanceof Date) {
+    if (!isNaN(val.getTime())) {
+      return val.toISOString().split('T')[0];
+    }
+  }
+
+  if (typeof val === 'number') {
+    // Excel date serial number check (years 1990 to 2050 -> 32874 to 54786)
+    if (val > 30000 && val < 60000) {
+      try {
+        const utc_days  = Math.floor(val - 25569);
+        const utc_value = utc_days * 86400;                                        
+        const date_info = new Date(utc_value * 1000);
+        if (!isNaN(date_info.getTime())) {
+          const y = date_info.getFullYear();
+          const m = String(date_info.getMonth() + 1).padStart(2, '0');
+          const d = String(date_info.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+      } catch (err) {}
+    }
+  }
+
+  // Replace non-breaking spaces or other spaces
+  let str = String(val).replace(/[\u00A0\u1680\u180e\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/g, ' ').trim();
+  if (!str) return new Date().toISOString().split('T')[0];
+
+  // Raw serial string format check
+  if (/^\d{5}(\.\d+)?$/.test(str)) {
+    const num = parseFloat(str);
+    if (num > 30000 && num < 60000) {
+      try {
+        const utc_days  = Math.floor(num - 25569);
+        const utc_value = utc_days * 86400;                                        
+        const date_info = new Date(utc_value * 1000);
+        if (!isNaN(date_info.getTime())) {
+          const y = date_info.getFullYear();
+          const m = String(date_info.getMonth() + 1).padStart(2, '0');
+          const d = String(date_info.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+      } catch (err) {}
+    }
+  }
+
+  // Try standard Date parsing
+  let d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    if (y > 1900 && y < 2100) {
+      return d.toISOString().split('T')[0];
+    }
+  }
+
+  // Try parsing DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1; // 0-indexed
+    const year = parseInt(dmyMatch[3], 10);
+    const customDate = new Date(year, month, day);
+    if (!isNaN(customDate.getTime())) {
+      return customDate.toISOString().split('T')[0];
+    }
+  }
+
+  // Try parsing YYYY/MM/DD or YYYY-MM-DD
+  const ymdMatch = str.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    const customDate = new Date(year, month, day);
+    if (!isNaN(customDate.getTime())) {
+      return customDate.toISOString().split('T')[0];
+    }
+  }
+
+  // Try DD-MMM-YYYY or DD/MMM/YYYY (e.g., 15-May-2026 or 15/May/2026 or 15 May 2026)
+  const dMmmYMatch = str.match(/^(\d{1,2})[/\-. ]([a-zA-Z]{3,10})[/\-. ](\d{4})$/);
+  if (dMmmYMatch) {
+    const day = parseInt(dMmmYMatch[1], 10);
+    const mStr = dMmmYMatch[2].toLowerCase().slice(0, 3);
+    const year = parseInt(dMmmYMatch[3], 10);
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const month = months.indexOf(mStr);
+    if (month !== -1) {
+      const customDate = new Date(year, month, day);
+      if (!isNaN(customDate.getTime())) {
+        return customDate.toISOString().split('T')[0];
+      }
+    }
+  }
+
+  return new Date().toISOString().split('T')[0];
+};
+
+const findHeaderRowIndex = (allRows: any[][]): number => {
+  let bestRowIdx = 0;
+  let maxScore = 0;
+
+  // Check the first 25 rows
+  const rowsToCheck = Math.min(allRows.length, 25);
+  for (let i = 0; i < rowsToCheck; i++) {
+    const row = allRows[i];
+    if (!row || !Array.isArray(row)) continue;
+
+    let score = 0;
+    const lowerCells = row.map(c => String(c || '').toLowerCase().trim());
+    
+    const matchesDate = lowerCells.some(c => HEADER_KEYWORDS.date.some(k => c === k || c.includes(k) || k.includes(c)));
+    const matchesDesc = lowerCells.some(c => HEADER_KEYWORDS.description.some(k => c === k || c.includes(k) || k.includes(c)));
+    const matchesAmount = lowerCells.some(c => HEADER_KEYWORDS.amount.some(k => c === k || c.includes(k) || k.includes(c)));
+    const matchesIncome = lowerCells.some(c => HEADER_KEYWORDS.income.some(k => c === k || c.includes(k) || k.includes(c)));
+    const matchesExpense = lowerCells.some(c => HEADER_KEYWORDS.expense.some(k => c === k || c.includes(k) || k.includes(c)));
+
+    if (matchesDate) score += 3.0;
+    if (matchesDesc) score += 3.0;
+    if (matchesAmount) score += 2.0;
+    if (matchesIncome) score += 1.5;
+    if (matchesExpense) score += 1.5;
+
+    const matchesCat = lowerCells.some(c => HEADER_KEYWORDS.category.some(k => c === k || c.includes(k) || k.includes(c)));
+    const matchesRef = lowerCells.some(c => HEADER_KEYWORDS.reference.some(k => c === k || c.includes(k) || k.includes(c)));
+    if (matchesCat) score += 1.0;
+    if (matchesRef) score += 1.0;
+
+    if (score > maxScore && score >= 2.0) {
+      maxScore = score;
+      bestRowIdx = i;
+    }
+  }
+
+  return maxScore >= 2.0 ? bestRowIdx : 0;
 };
 
 export default function ExpenseUpload() {
-  const { user, finData, activeBusinessId, businesses, setActiveTab } = useApp();
+  const { user, finData, activeBusinessId, businesses, setActiveTab, refreshData } = useApp();
   const activeBusiness = businesses.find(b => b.id === activeBusinessId);
   const settings = activeBusiness ? getBusinessSettings(activeBusiness) : null;
   const currencyCode = settings?.currency || 'USD';
   
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<'upload' | 'create-categories' | 'resolve' | 'preview'>('upload');
+  const [expectedType, setExpectedType] = useState<'excel' | 'csv'>('excel');
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCreatingCategories, setIsCreatingCategories] = useState(false);
@@ -63,10 +276,11 @@ export default function ExpenseUpload() {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedTransaction[]>([]);
   const [unresolvedNames, setUnresolvedNames] = useState<string[]>([]);
-  const [newCategorySettings, setNewCategorySettings] = useState<Record<string, { type: 'Income' | 'Expense', create: boolean }>>({});
+  const [newCategorySettings, setNewCategorySettings] = useState<Record<string, { type: 'Income' | 'Expense' | 'Asset' | 'Liability', create: boolean }>>({});
   const [resolutions, setResolutions] = useState<Record<string, { type: 'create' | 'map', target?: string }>>({});
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   React.useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -101,17 +315,89 @@ export default function ExpenseUpload() {
 
   const processRawRows = async (rows: any[], headers: string[]) => {
     setIsProcessing(true);
-    setFeedback({ type: 'success', message: 'Analyzing file structure...' });
+    setFeedback({ type: 'success', message: 'Identifying columns with AI...' });
     
     try {
-      const dateHeader = findBestHeader(headers, HEADER_KEYWORDS.date);
-      const descHeader = findBestHeader(headers, HEADER_KEYWORDS.description);
-      const catHeader = findBestHeader(headers, HEADER_KEYWORDS.category);
-      const refHeader = findBestHeader(headers, HEADER_KEYWORDS.reference);
+      let dateHeader: string | undefined = undefined;
+      let descHeader: string | undefined = undefined;
+      let catHeader: string | undefined = undefined;
+      let amountHeader: string | undefined = undefined;
+      let notesHeader: string | undefined = undefined;
       
-      const amountHeader = findBestHeader(headers, HEADER_KEYWORDS.amount);
-      const incomeHeader = findBestHeader(headers, HEADER_KEYWORDS.income);
-      const expenseHeader = findBestHeader(headers, HEADER_KEYWORDS.expense);
+      let incomeHeader: string | undefined = undefined;
+      let expenseHeader: string | undefined = undefined;
+
+      try {
+        const sampleRows = rows.slice(0, 4).map(rowObj => {
+          return headers.map(h => rowObj[h] !== undefined && rowObj[h] !== null ? String(rowObj[h]) : '');
+        });
+
+        const mappingRes = await fetch('/api/delight/mapping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ headers, sampleRows })
+        });
+
+        if (mappingRes.ok) {
+          const mapping = await mappingRes.json();
+          if (mapping.date) dateHeader = headers.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim());
+          if (mapping.description) descHeader = headers.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim());
+          if (mapping.category) catHeader = headers.find(h => h === mapping.category || h.toLowerCase().trim() === mapping.category.toLowerCase().trim());
+          if (mapping.amount) amountHeader = headers.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim());
+          if (mapping.notes) notesHeader = headers.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim());
+        }
+      } catch (aiErr) {
+        console.warn("AI Mapping failed, using keyword fallback", aiErr);
+      }
+
+      // Keyword heuristic fallback for unmapped fields
+      if (!dateHeader) dateHeader = findBestHeader(headers, HEADER_KEYWORDS.date);
+      if (!descHeader) descHeader = findBestHeader(headers, HEADER_KEYWORDS.description);
+      if (!catHeader) catHeader = findBestHeader(headers, HEADER_KEYWORDS.category);
+      if (!amountHeader) {
+        amountHeader = findBestHeader(headers, HEADER_KEYWORDS.amount);
+        incomeHeader = findBestHeader(headers, HEADER_KEYWORDS.income);
+        expenseHeader = findBestHeader(headers, HEADER_KEYWORDS.expense);
+      }
+      if (!notesHeader) {
+        notesHeader = findBestHeader(headers, HEADER_KEYWORDS.reference);
+      }
+
+      // Fallback auto-detection if columns are still missing
+      const requiredMatches = Math.max(1, Math.min(2, rows.length));
+
+      if (!dateHeader && headers.length > 0) {
+        for (const h of headers) {
+          const sample = rows.slice(0, 5).map(r => String(r[h] || ''));
+          const isDateLike = sample.filter(s => {
+            if (!s) return false;
+            const d = new Date(s);
+            return !isNaN(d.getTime()) && s.length >= 6 && /\d/.test(s);
+          }).length >= requiredMatches;
+          if (isDateLike) {
+            dateHeader = h;
+            break;
+          }
+        }
+      }
+
+      if (!amountHeader && !incomeHeader && !expenseHeader && headers.length > 0) {
+        for (const h of headers) {
+          const sample = rows.slice(0, 5).map(r => parseRobustFloat(r[h]));
+          const numericCount = sample.filter(n => n !== 0).length;
+          if (numericCount >= requiredMatches) {
+            amountHeader = h;
+            break;
+          }
+        }
+      }
+
+      if (!descHeader && headers.length > 0) {
+        const leftover = headers.filter(h => h !== dateHeader && h !== amountHeader && h !== incomeHeader && h !== expenseHeader);
+        if (leftover.length > 0) {
+          descHeader = leftover[0];
+        }
+      }
 
       setWasDualColumnAmount(!!(incomeHeader && expenseHeader));
 
@@ -126,19 +412,19 @@ export default function ExpenseUpload() {
         if (incomeHeader && expenseHeader) {
            srcIn = String(row[incomeHeader] || '');
            srcOut = String(row[expenseHeader] || '');
-           const valIn = parseFloat(srcIn.replace(/[^0-9.-]+/g, ""));
-           const valOut = parseFloat(srcOut.replace(/[^0-9.-]+/g, ""));
+           const valIn = parseRobustFloat(row[incomeHeader]);
+           const valOut = parseRobustFloat(row[expenseHeader]);
            
-           if (!isNaN(valIn) && valIn !== 0) {
+           if (valIn !== 0) {
              amount = Math.abs(valIn);
              type = 'Income';
-           } else if (!isNaN(valOut) && valOut !== 0) {
+           } else if (valOut !== 0) {
              amount = Math.abs(valOut);
              type = 'Expense';
            }
         } else if (amountHeader) {
-           const rawVal = parseFloat(String(row[amountHeader] || '0').replace(/[^0-9.-]+/g, ""));
-           if (!isNaN(rawVal)) {
+           const rawVal = parseRobustFloat(row[amountHeader]);
+           if (rawVal !== 0) {
              amount = Math.abs(rawVal);
              type = rawVal >= 0 ? 'Income' : 'Expense';
            }
@@ -181,15 +467,38 @@ export default function ExpenseUpload() {
         const detectedType = categoryTypeMap.get((category || '').toLowerCase()) || type;
 
         // Robust date parsing
-        let formattedDate = new Date().toISOString().split('T')[0];
-        if (dateHeader && row[dateHeader]) {
-          try {
-            const d = new Date(row[dateHeader]);
-            if (!isNaN(d.getTime())) {
-              formattedDate = d.toISOString().split('T')[0];
-            }
-          } catch(e) {}
+        const formattedDate = parseRobustDate(dateHeader ? row[dateHeader] : null);
+
+        // Map Notes and collect extra columns
+        const notesParts: string[] = [];
+        if (notesHeader && row[notesHeader] !== undefined) {
+          const notesVal = String(row[notesHeader] || '').trim();
+          if (notesVal) {
+            notesParts.push(notesVal);
+          }
         }
+
+        const mappedHeaders = [
+          dateHeader,
+          descHeader,
+          catHeader,
+          amountHeader,
+          incomeHeader,
+          expenseHeader,
+          notesHeader
+        ].filter(Boolean) as string[];
+
+        // Add extra columns with column: prefix
+        headers.forEach(h => {
+          if (!mappedHeaders.includes(h)) {
+            const val = String(row[h] || '').trim();
+            if (val) {
+              notesParts.push(`${h}: ${val}`);
+            }
+          }
+        });
+
+        const finalNotes = notesParts.join(" | ");
 
         let tx: ParsedTransaction = {
           id: `row-${idx}`,
@@ -197,7 +506,7 @@ export default function ExpenseUpload() {
           amount,
           description,
           category,
-          reference: refHeader ? String(row[refHeader] || '') : '',
+          reference: finalNotes,
           type: detectedType,
           srcIncome: srcIn,
           srcExpense: srcOut
@@ -207,7 +516,7 @@ export default function ExpenseUpload() {
       }).filter(t => !isNaN(t.amount) && t.amount !== 0);
 
       if (transactions.length === 0) {
-        setFeedback({ type: 'error', message: 'No valid transaction rows found in file.' });
+        setFeedback({ type: 'error', message: 'No valid transaction rows found in file. Make sure columns contain dates and numeric amounts.' });
         return;
       }
 
@@ -221,12 +530,14 @@ export default function ExpenseUpload() {
 
       if (missing.length > 0) {
         setUnresolvedNames(missing);
-        const initialSettings: Record<string, { type: 'Income' | 'Expense', create: boolean }> = {};
+        const initialSettings: Record<string, { type: 'Income' | 'Expense' | 'Asset' | 'Liability', create: boolean }> = {};
         missing.forEach(name => {
           // Guess type based on data if possible
           const firstTx = transactions.find(t => t.category === name);
           initialSettings[name] = { 
-            type: firstTx?.type === 'Income' ? 'Income' : 'Expense',
+            type: (firstTx?.type === 'Income' || firstTx?.type === 'Asset' || firstTx?.type === 'Liability') 
+              ? firstTx.type as any 
+              : 'Expense',
             create: true 
           };
         });
@@ -234,7 +545,7 @@ export default function ExpenseUpload() {
         setStep('create-categories');
       } else {
         setSelectedRows(new Set(transactions.map(t => t.id)));
-        executeImport(transactions);
+        setStep('preview');
       }
       setFeedback(null);
     } catch (err) {
@@ -245,23 +556,72 @@ export default function ExpenseUpload() {
     }
   };
 
-  const finalizeResolution = () => {
-    const updated = parsedData.map(tx => {
-      const res = resolutions[tx.category];
-      if (res && res.type === 'map' && res.target) {
-        const newType = categoryTypeMap.get((res.target || '').toLowerCase());
-        return {
-          ...tx,
-          category: res.target,
-          type: wasDualColumnAmount ? tx.type : (newType || tx.type)
-        };
-      }
-      return tx;
-    });
+  const finalizeResolution = async () => {
+    if (!activeBusinessId) return;
+    setIsProcessing(true);
+    setFeedback({ type: 'success', message: 'Finalizing resolutions and creating categories...' });
     
-    setParsedData(updated);
-    setSelectedRows(new Set(updated.map(t => t.id)));
-    executeImport(updated);
+    try {
+      const now = new Date();
+      // Find which categories we need to create
+      const toCreate: string[] = [];
+      Object.entries(resolutions).forEach(([name, res]) => {
+        if (res.type === 'create') {
+          toCreate.push(name);
+        }
+      });
+
+      for (const name of toCreate) {
+        // Guess type from data
+        const firstTx = parsedData.find(t => t.category === name);
+        const type = (firstTx?.type === 'Income' || firstTx?.type === 'Asset' || firstTx?.type === 'Liability')
+          ? firstTx.type as any
+          : 'Expense';
+
+        try {
+          await categoryApi.create(activeBusinessId, {
+            name,
+            type,
+            budget: 0,
+            month: now.getMonth() + 1,
+            year: now.getFullYear()
+          });
+        } catch (err) {
+          console.error("Failed to create category during mapping finalization:", name, err);
+        }
+      }
+
+      // Refresh context data so newly created categories appear
+      if (typeof refreshData === 'function') {
+        await refreshData({ skipRules: true });
+      }
+
+      const updated = parsedData.map(tx => {
+        const res = resolutions[tx.category];
+        if (res) {
+          if (res.type === 'map' && res.target) {
+            const newType = categoryTypeMap.get((res.target || '').toLowerCase());
+            return {
+              ...tx,
+              category: res.target,
+              type: wasDualColumnAmount ? tx.type : (newType || tx.type)
+            };
+          }
+          // If 'create', the parsed transaction category stays the same, as it has now been created in DB
+        }
+        return tx;
+      });
+
+      setParsedData(updated);
+      setSelectedRows(new Set(updated.map(t => t.id)));
+      setStep('preview');
+      setFeedback(null);
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'error', message: 'Failed to finalize resolutions.' });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const applyRulesToData = () => {
@@ -385,18 +745,203 @@ export default function ExpenseUpload() {
     }
   };
 
+  const parseTwoDimensionalArray = async (allRows: any[][]) => {
+    if (!allRows || allRows.length === 0) {
+      throw new Error('No data found in the file.');
+    }
+
+    const headerIdx = findHeaderRowIndex(allRows);
+    const headersRow = allRows[headerIdx] || [];
+    
+    // Assign unique column names to empty or duplicate columns
+    const seen = new Set<string>();
+    const headers = headersRow.map((h, colIdx) => {
+      let name = String(h || '').trim();
+      if (!name) {
+        name = `Column_${colIdx + 1}`;
+      }
+      if (seen.has(name)) {
+        name = `${name}_${colIdx + 1}`;
+      }
+      seen.add(name);
+      return name;
+    });
+
+    if (headers.filter(Boolean).length === 0) {
+      throw new Error('Could not automatically determine column headers in the file.');
+    }
+
+    const dataRows = allRows.slice(headerIdx + 1);
+    const jsonData = dataRows.map(r => {
+      const obj: Record<string, any> = {};
+      headers.forEach((h, colIdx) => {
+        if (h) {
+          obj[h] = r[colIdx];
+        }
+      });
+      return obj;
+    }).filter(obj => {
+      // Filter out completely blank or empty row objects
+      return Object.values(obj).some(val => val !== undefined && val !== null && String(val).trim() !== "");
+    });
+
+    if (jsonData.length === 0) {
+      throw new Error('No transaction rows were parsed. Ensure rows under the headers have transactions.');
+    }
+
+    await processRawRows(jsonData, headers.filter(Boolean));
+  };
+
+  const parseExcel = (file: File) => {
+    setIsProcessing(true);
+    setFeedback({ type: 'success', message: 'Reading Excel file...' });
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        if (!data) {
+          throw new Error('Failed to read file data.');
+        }
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+        
+        let worksheet = null;
+        let selectedSheetName = "";
+        
+        // Loop through worksheets to find the first one that is NOT blank
+        for (const sheetName of workbook.SheetNames) {
+          const ws = workbook.Sheets[sheetName];
+          const sheetRows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+          const nonBlank = sheetRows.filter(r => r && r.some(c => String(c || '').trim() !== ""));
+          if (nonBlank.length > 0) {
+            worksheet = ws;
+            selectedSheetName = sheetName;
+            break;
+          }
+        }
+
+        if (!worksheet) {
+          throw new Error('Workbook contains no worksheet with records.');
+        }
+        
+        // Retrieve the entire sheet as a raw 2D array of cells
+        const sheetRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+
+        if (sheetRows.length === 0) {
+          throw new Error(`No records found in active Excel worksheet "${selectedSheetName}".`);
+        }
+
+        await parseTwoDimensionalArray(sheetRows);
+      } catch (err: any) {
+        console.error(err);
+        setFeedback({ type: 'error', message: err.message || 'Failed to parse Excel file.' });
+        setIsProcessing(false);
+      }
+    };
+    reader.onerror = () => {
+      setFeedback({ type: 'error', message: 'FileReader error occurred.' });
+      setIsProcessing(false);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleFileProcess = (file: File) => {
+    const fileName = file.name.toLowerCase();
+    const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+    const isCsvFile = fileName.endsWith('.csv') || fileName.endsWith('.txt') || fileName.endsWith('.tsv');
+
+    if (expectedType === 'excel' && !isExcelFile) {
+      setFeedback({ type: 'error', message: 'Invalid Excel File!' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    if (expectedType === 'csv' && !isCsvFile) {
+      setFeedback({ type: 'error', message: 'Invalid Comma Separated!' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (isExcelFile) {
+      parseExcel(file);
+    } else {
+      Papa.parse(file, {
+        header: false,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          try {
+            let data = results.data as any[][];
+            // Check if it appears to have parsed as single column with semicolons or tabs
+            if (data.length > 0 && data[0].length === 1) {
+              const firstCell = String(data[0][0] || '');
+              if (firstCell.includes(';') && !firstCell.includes(',')) {
+                Papa.parse(file, {
+                  header: false,
+                  delimiter: ';',
+                  skipEmptyLines: 'greedy',
+                  complete: async (retryResults) => {
+                    try {
+                      await parseTwoDimensionalArray(retryResults.data as any[][]);
+                    } catch (err: any) {
+                      setFeedback({ type: 'error', message: err.message || 'Failed to parse CSV file with semicolon delimiter.' });
+                      setIsProcessing(false);
+                    }
+                  }
+                });
+                return;
+              } else if (firstCell.includes('\t')) {
+                Papa.parse(file, {
+                  header: false,
+                  delimiter: '\t',
+                  skipEmptyLines: 'greedy',
+                  complete: async (retryResults) => {
+                    try {
+                      await parseTwoDimensionalArray(retryResults.data as any[][]);
+                    } catch (err: any) {
+                      setFeedback({ type: 'error', message: err.message || 'Failed to parse tab-delimited file.' });
+                      setIsProcessing(false);
+                    }
+                  }
+                });
+                return;
+              }
+            }
+            await parseTwoDimensionalArray(data);
+          } catch (err: any) {
+            console.error(err);
+            setFeedback({ type: 'error', message: err.message || 'Failed to parse CSV file.' });
+            setIsProcessing(false);
+          }
+        }
+      });
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user || !activeBusinessId) return;
 
     setFeedback(null);
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        await processRawRows(results.data, results.meta.fields || []);
-      }
-    });
+    handleFileProcess(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !user || !activeBusinessId) return;
+
+    setFeedback(null);
+    handleFileProcess(file);
   };
 
   const handleCreateCategories = async () => {
@@ -427,12 +972,17 @@ export default function ExpenseUpload() {
       });
       setResolutions(initialRes);
       
+      // Refresh context data so new categories are in finData.budgets list
+      if (typeof refreshData === 'function') {
+        await refreshData({ skipRules: true });
+      }
+
       setFeedback({ type: 'success', message: `Created ${entries.length} categories.` });
       
       const remainingToMap = unresolvedNames.filter(name => !newCategorySettings[name]?.create);
       if (remainingToMap.length === 0) {
          setSelectedRows(new Set(parsedData.map(t => t.id)));
-         executeImport(parsedData);
+         setStep('preview');
       } else {
          setStep('resolve');
       }
@@ -669,7 +1219,7 @@ export default function ExpenseUpload() {
                           </h3>
                           <ul className="space-y-2">
                              {[
-                               'Upload any CSV or Text file from your bank or ERP.',
+                               'Upload any CSV, Excel (.xlsx, .xls) or Text file from your bank or ERP.',
                                'Columns are automatically mapped by keywords.',
                                'Handles dual columns (Credits/Debits or In/Out).',
                                'Existing categories are automatically detected.'
@@ -677,7 +1227,7 @@ export default function ExpenseUpload() {
                                <li key={i} className="text-[11px] text-slate-500 flex gap-2">
                                  <span className="text-[#86BC24]">•</span>
                                  {text}
-                               </li>
+                                </li>
                              ))}
                           </ul>
                           <div className="mt-4 pt-4 border-t border-slate-100">
@@ -693,27 +1243,68 @@ export default function ExpenseUpload() {
                       </div>
 
                       <div 
-                        className="border-2 border-dashed rounded-2xl p-12 text-center transition-all flex flex-col items-center justify-center relative overflow-hidden border-slate-200"
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={cn(
+                          "border-2 border-dashed rounded-2xl p-12 text-center transition-all flex flex-col items-center justify-center relative overflow-hidden",
+                          isDragging 
+                            ? "border-[#86BC24] bg-green-50/30 scale-[1.01] shadow-md shadow-[#86BC24]/5" 
+                            : "border-slate-200 hover:border-slate-350"
+                        )}
                       >
-                        <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6 transition-all duration-300 bg-slate-50 text-slate-400">
+                        <div className={cn(
+                          "w-20 h-20 rounded-3xl flex items-center justify-center mb-6 transition-all duration-300",
+                          isDragging ? "bg-white text-[#86BC24] shadow-sm animate-pulse" : "bg-slate-50 text-slate-400"
+                        )}>
                           <UploadCloud size={32} />
                         </div>
                         
                         <div className="space-y-4">
                           <button 
+                            type="button"
                             onClick={() => fileInputRef.current?.click()}
                             className="px-8 py-3 bg-[#86BC24] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#75a61f] transition-all shadow-lg shadow-[#86BC24]/20 flex items-center gap-2 mx-auto"
                           >
                             <UploadCloud size={16} />
                             Select File
                           </button>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">
-                            or drag and drop here
+
+                          <div className="flex items-center justify-center gap-6 pt-2">
+                            <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest cursor-pointer select-none">
+                              <input 
+                                type="radio" 
+                                name="expectedFileType" 
+                                value="excel" 
+                                checked={expectedType === 'excel'} 
+                                onChange={() => setExpectedType('excel')}
+                                className="w-3.5 h-3.5 rounded-full border-slate-300 text-[#86BC24] focus:ring-[#86BC24] focus:ring-offset-0 cursor-pointer"
+                              />
+                              Excel File
+                            </label>
+                            <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest cursor-pointer select-none">
+                              <input 
+                                type="radio" 
+                                name="expectedFileType" 
+                                value="csv" 
+                                checked={expectedType === 'csv'} 
+                                onChange={() => setExpectedType('csv')}
+                                className="w-3.5 h-3.5 rounded-full border-slate-300 text-[#86BC24] focus:ring-[#86BC24] focus:ring-offset-0 cursor-pointer"
+                              />
+                              Comma Separated
+                            </label>
+                          </div>
+
+                          <p className={cn(
+                            "text-[10px] uppercase font-bold tracking-widest transition-colors",
+                            isDragging ? "text-[#86BC24]" : "text-slate-400"
+                          )}>
+                            {isDragging ? 'Drop file now' : 'or drag and drop here'}
                           </p>
                         </div>
 
                         <input 
-                          type="file" accept=".csv, .txt" className="hidden" ref={fileInputRef} 
+                          type="file" accept=".csv, .txt, .xlsx, .xls" className="hidden" ref={fileInputRef} 
                           onChange={handleFileUpload}
                         />
                       </div>
@@ -772,14 +1363,14 @@ export default function ExpenseUpload() {
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <button 
                                     disabled={!newCategorySettings[name]?.create}
                                     onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Income' } }))}
                                     className={cn(
                                       "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
                                       newCategorySettings[name]?.type === 'Income'
-                                        ? "bg-green-500 text-white border-green-500"
+                                        ? "bg-green-600 text-white border-green-600 shadow-sm"
                                         : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
                                     )}
                                   >
@@ -791,11 +1382,35 @@ export default function ExpenseUpload() {
                                     className={cn(
                                       "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
                                       newCategorySettings[name]?.type === 'Expense'
-                                        ? "bg-red-500 text-white border-red-500"
+                                        ? "bg-red-600 text-white border-red-600 shadow-sm"
                                         : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
                                     )}
                                   >
                                     Expense
+                                  </button>
+                                  <button 
+                                    disabled={!newCategorySettings[name]?.create}
+                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Asset' } }))}
+                                    className={cn(
+                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
+                                      newCategorySettings[name]?.type === 'Asset'
+                                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                    )}
+                                  >
+                                    Asset
+                                  </button>
+                                  <button 
+                                    disabled={!newCategorySettings[name]?.create}
+                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Liability' } }))}
+                                    className={cn(
+                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
+                                      newCategorySettings[name]?.type === 'Liability'
+                                        ? "bg-orange-600 text-white border-orange-600 shadow-sm"
+                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                    )}
+                                  >
+                                    Liability
                                   </button>
                                 </div>
                               </td>
@@ -1019,9 +1634,22 @@ export default function ExpenseUpload() {
                   {step !== 'upload' && !importResult && (
                     <button 
                       onClick={() => {
-                        if (step === 'preview') setStep('resolve');
-                        else if (step === 'resolve') setStep('create-categories');
-                        else setStep('upload');
+                        if (step === 'preview') {
+                          if (unresolvedNames.length > 0) {
+                            const remainingToMap = unresolvedNames.filter(name => !newCategorySettings[name]?.create);
+                            if (remainingToMap.length > 0) {
+                              setStep('resolve');
+                            } else {
+                              setStep('create-categories');
+                            }
+                          } else {
+                            setStep('upload');
+                          }
+                        } else if (step === 'resolve') {
+                          setStep('create-categories');
+                        } else {
+                          setStep('upload');
+                        }
                       }}
                       className="px-6 py-2.5 h-10 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-orange-100 transition-all flex items-center gap-2"
                     >
@@ -1033,7 +1661,7 @@ export default function ExpenseUpload() {
                      <button 
                       onClick={handleCreateCategories}
                       disabled={isCreatingCategories}
-                      className="px-8 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
+                      className="px-8 h-10 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
                     >
                       {isCreatingCategories ? (
                         <>

@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -20,7 +20,14 @@ async function startServer() {
   app.use(cors());
 
   // AI Client Initialization
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY!,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
 
   // API Routes
   app.get("/api/delight/health", (req, res) => {
@@ -230,6 +237,81 @@ async function startServer() {
         error: "Internal Intelligence Error", 
         message: error.message 
       });
+    }
+  });
+
+  // AI-powered column mapper
+  app.post("/api/delight/mapping", async (req, res) => {
+    try {
+      const { headers, sampleRows } = req.body;
+      if (!headers || !headers.length) {
+        return res.status(400).json({ error: "Missing headers in request." });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Gemini API key is missing on the server." });
+      }
+
+      const aiClient = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const prompt = `You are a financial parsing expert database system.
+Analyze the following list of file column headers and these sample data rows to identify which columns represent the standard transaction fields:
+- Date: Date of transaction
+- Description: Description, payee, memo, details, vendor, particular, narrative
+- Category: Category, type, tag, group
+- Amount: Decimal numerical amount of the transaction
+- Notes: Specific notes, client reference, receipt info, secondary descriptions
+
+Spreadsheet Headers List:
+${JSON.stringify(headers)}
+
+Sample Rows (array of row arrays containing cell values corresponding to the headers):
+${JSON.stringify(sampleRows || [])}
+
+Instructions:
+- Maps each of the standard transaction fields to the single EXACT header string from the input headers array.
+- If a standard field is not present or has no good match among the headers, set its value to an empty string.
+- You must return a JSON object with keys: "date", "description", "category", "amount", "notes" representing the exact headers string.`;
+
+      const response = await aiClient.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          systemInstruction: "You are an intelligent data schema identification service that returns exact column mappings as JSON.",
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING, description: "exact spreadsheet header string matching Date" },
+              description: { type: Type.STRING, description: "exact spreadsheet header string matching Description" },
+              category: { type: Type.STRING, description: "exact spreadsheet header string matching Category" },
+              amount: { type: Type.STRING, description: "exact spreadsheet header string matching Amount" },
+              notes: { type: Type.STRING, description: "exact spreadsheet header string matching Notes" },
+            },
+            required: ["date", "description", "category", "amount", "notes"]
+          }
+        }
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("No response from Gemini API");
+      }
+
+      const mapping = JSON.parse(text);
+      res.json(mapping);
+    } catch (err: any) {
+      console.error("Column mapping API error:", err);
+      res.status(500).json({ error: err.message || "Failed to identify columns with AI." });
     }
   });
 

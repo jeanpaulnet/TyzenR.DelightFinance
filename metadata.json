@@ -2,5 +2,7 @@
   "name": "Delight Finance",
   "description": "Intelligent financial management platform featuring precise budgeting and AI-powered financial insights.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
