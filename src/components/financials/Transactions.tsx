@@ -222,6 +222,24 @@ export default function Transactions() {
     return map;
   }, [finData.budgets]);
 
+  // Income/Expense budgets sorted by Income first, then Expense, then alphabetically.
+  const incomeExpenseBudgets = useMemo(() => {
+    return finData.budgets
+      .filter(b => {
+        const type = (b.type || '').toLowerCase();
+        return type === 'income' || type === 'expense';
+      })
+      .sort((a, b) => {
+        const typeA = (a.type || '').toLowerCase();
+        const typeB = (b.type || '').toLowerCase();
+        if (typeA === 'income' && typeB !== 'income') return -1;
+        if (typeA !== 'income' && typeB === 'income') return 1;
+        const nameA = a.name || a.category || '';
+        const nameB = b.name || b.category || '';
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+      });
+  }, [finData.budgets]);
+
   const filteredExpenses = useMemo(() => {
     // We still keep this for the chart, using finData.expenses which is fresh from refreshData
     const filtered = finData.expenses.filter(e => {
@@ -613,20 +631,19 @@ export default function Transactions() {
                    className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-colors text-sm"
                  >
                   <option value="" className="text-slate-900">Select Category</option>
-                  {finData.budgets
-                    .filter(cat => cat.type === 'Income' || cat.type === 'Expense')
-                    .map(cat => {
-                      const type = cat.type || 'Expense';
-                      return (
-                        <option 
-                          key={cat.id} 
-                          value={cat.id}
-                          className={type === 'Income' ? "text-emerald-600 font-medium" : "text-rose-600 font-medium"}
-                        >
-                          {cat.name} ({type})
-                        </option>
-                      );
-                    })}
+                  {incomeExpenseBudgets.map(cat => {
+                    const type = cat.type || 'Expense';
+                    return (
+                      <option 
+                        key={cat.id} 
+                        value={cat.id}
+                        style={{ color: type.toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}
+                        className={type.toLowerCase() === 'income' ? "text-emerald-600 font-medium bg-white" : "text-rose-600 font-medium bg-white"}
+                      >
+                        {cat.name} ({type})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="space-y-2">
@@ -986,20 +1003,19 @@ export default function Transactions() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
                   >
                     <option value="">Select Category</option>
-                    {finData.budgets
-                      .filter(cat => cat.type === 'Income' || cat.type === 'Expense')
-                      .map(cat => {
-                        const type = cat.type || 'Expense';
-                        return (
-                          <option 
-                            key={cat.id} 
-                            value={cat.id}
-                            className={type === 'Income' ? "text-emerald-600 font-medium" : "text-rose-600 font-medium"}
-                          >
-                            {cat.name || cat.category} ({type})
-                          </option>
-                        );
-                      })}
+                    {incomeExpenseBudgets.map(cat => {
+                      const type = cat.type || 'Expense';
+                      return (
+                        <option 
+                          key={cat.id} 
+                          value={cat.id}
+                          style={{ color: type.toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}
+                          className={type.toLowerCase() === 'income' ? "text-emerald-600 font-medium bg-white" : "text-rose-600 font-medium bg-white"}
+                        >
+                          {cat.name || cat.category} ({type})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 

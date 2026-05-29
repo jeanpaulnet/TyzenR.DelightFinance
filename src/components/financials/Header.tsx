@@ -66,7 +66,7 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
            <div 
              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
              className={cn(
-               "flex items-center gap-4 px-6 py-3 bg-[#F5F5F5] border border-white/20 rounded-2xl hover:bg-white transition-all cursor-pointer w-96 shadow-sm",
+               "flex items-center gap-4 px-6 py-3 bg-[#F5F5F5] border border-white/20 rounded-2xl hover:bg-white transition-all cursor-pointer w-[500px] shadow-sm",
                isDropdownOpen ? "bg-white shadow-md border-white/40" : ""
              )}
            >
@@ -98,7 +98,7 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
            </div>
 
            {isDropdownOpen && (
-             <div className="absolute top-full left-0 pt-2 w-64 z-50">
+             <div className="absolute top-full left-0 pt-2 w-full z-50">
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-2 animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1 flex items-center justify-between">
                      Your Organizations

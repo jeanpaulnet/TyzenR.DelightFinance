@@ -306,6 +306,24 @@ export default function ExpenseUpload() {
     return map;
   }, [finData.budgets]);
 
+  // Income/Expense budgets sorted by Income first, then Expense, then alphabetically.
+  const incomeExpenseBudgets = useMemo(() => {
+    return finData.budgets
+      .filter(b => {
+        const type = (b.type || '').toLowerCase();
+        return type === 'income' || type === 'expense';
+      })
+      .sort((a, b) => {
+        const typeA = (a.type || '').toLowerCase();
+        const typeB = (b.type || '').toLowerCase();
+        if (typeA === 'income' && typeB !== 'income') return -1;
+        if (typeA !== 'income' && typeB === 'income') return 1;
+        const nameA = a.name || '';
+        const nameB = b.name || '';
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+      });
+  }, [finData.budgets]);
+
   const findBestHeader = (headers: string[], keywords: string[]) => {
     return headers.find(h => {
       const lower = h.toLowerCase().trim();
@@ -531,18 +549,22 @@ export default function ExpenseUpload() {
       if (missing.length > 0) {
         setUnresolvedNames(missing);
         const initialSettings: Record<string, { type: 'Income' | 'Expense' | 'Asset' | 'Liability', create: boolean }> = {};
+        const initialResolutions: Record<string, { type: 'create' | 'map', target?: string }> = {};
         missing.forEach(name => {
           // Guess type based on data if possible
           const firstTx = transactions.find(t => t.category === name);
+          const type = (firstTx?.type === 'Income' || firstTx?.type === 'Asset' || firstTx?.type === 'Liability') 
+            ? firstTx.type as any 
+            : 'Expense';
           initialSettings[name] = { 
-            type: (firstTx?.type === 'Income' || firstTx?.type === 'Asset' || firstTx?.type === 'Liability') 
-              ? firstTx.type as any 
-              : 'Expense',
+            type,
             create: true 
           };
+          initialResolutions[name] = { type: 'create' };
         });
         setNewCategorySettings(initialSettings);
-        setStep('create-categories');
+        setResolutions(initialResolutions);
+        setStep('resolve');
       } else {
         setSelectedRows(new Set(transactions.map(t => t.id)));
         setStep('preview');
@@ -558,6 +580,21 @@ export default function ExpenseUpload() {
 
   const finalizeResolution = async () => {
     if (!activeBusinessId) return;
+    
+    // Check if any mapped items don't have a target selected
+    const missingMaps: string[] = [];
+    unresolvedNames.forEach(name => {
+      const res = resolutions[name];
+      if (res?.type === 'map' && !res.target) {
+        missingMaps.push(name);
+      }
+    });
+
+    if (missingMaps.length > 0) {
+      setFeedback({ type: 'error', message: `Please select an existing category for: ${missingMaps.join(', ')}` });
+      return;
+    }
+
     setIsProcessing(true);
     setFeedback({ type: 'success', message: 'Finalizing resolutions and creating categories...' });
     
@@ -572,11 +609,7 @@ export default function ExpenseUpload() {
       });
 
       for (const name of toCreate) {
-        // Guess type from data
-        const firstTx = parsedData.find(t => t.category === name);
-        const type = (firstTx?.type === 'Income' || firstTx?.type === 'Asset' || firstTx?.type === 'Liability')
-          ? firstTx.type as any
-          : 'Expense';
+        const type = newCategorySettings[name]?.type || 'Expense';
 
         try {
           await categoryApi.create(activeBusinessId, {
@@ -1155,8 +1188,7 @@ export default function ExpenseUpload() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                         {step === 'upload' ? 'Step 1: Upload Data' : 
-                         step === 'create-categories' ? 'Step 2: New Categories' :
-                         step === 'resolve' ? 'Step 3: Map Categories' : `Step 4: Preview records`}
+                         step === 'resolve' ? 'Step 2: Map or Create Categories' : 'Step 3: Preview records'}
                       </p>
                       {step === 'preview' && (
                         <>
@@ -1320,13 +1352,13 @@ export default function ExpenseUpload() {
                       </div>
                     )}
                   </div>
-                ) : step === 'create-categories' ? (
-                  <div className="space-y-6">
+                ) : step === 'resolve' ? (
+                  <div className="space-y-6 animate-in fade-in duration-200">
                     <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center gap-3">
                       <Settings2 size={20} className="text-indigo-600" />
                       <div>
-                        <h4 className="text-sm font-bold text-indigo-900">New Category Setup</h4>
-                        <p className="text-xs text-indigo-700">We found new categories in your file. Define them now or skip to map them to existing ones.</p>
+                        <h4 className="text-sm font-bold text-indigo-900 font-sans tracking-tight">Resolve Unresolved Categories</h4>
+                        <p className="text-xs text-indigo-700">We found categories in your file that do not exist in your books. For each, choose whether to create a new category or map it to an existing one.</p>
                       </div>
                     </div>
 
@@ -1334,165 +1366,152 @@ export default function ExpenseUpload() {
                       <table className="w-full text-left border-collapse">
                         <thead className="bg-slate-50 border-b border-slate-100">
                           <tr>
-                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category Name</th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Solution: Create New?</th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest w-1/4">Category in File</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest w-1/3 text-center">Resolution Action</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest w-5/12">Configuration</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {unresolvedNames.map(name => (
-                            <tr key={name} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4">
-                                <span className={cn(
-                                  "text-sm font-bold",
-                                  newCategorySettings[name]?.create ? "text-slate-900" : "text-slate-300 line-through"
-                                )}>{name}</span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex items-center justify-center gap-3">
-                                  <input 
-                                   type="checkbox" 
-                                   id={`create-${name}`}
-                                   checked={newCategorySettings[name]?.create}
-                                   onChange={(e) => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], create: e.target.checked } }))}
-                                   className="rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] w-4 h-4 cursor-pointer"
-                                  />
-                                  <label htmlFor={`create-${name}`} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">
-                                    {newCategorySettings[name]?.create ? 'Create' : 'Skip/Map'}
-                                  </label>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <button 
-                                    disabled={!newCategorySettings[name]?.create}
-                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Income' } }))}
-                                    className={cn(
-                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
-                                      newCategorySettings[name]?.type === 'Income'
-                                        ? "bg-green-600 text-white border-green-600 shadow-sm"
-                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
-                                    )}
-                                  >
-                                    Income
-                                  </button>
-                                  <button 
-                                    disabled={!newCategorySettings[name]?.create}
-                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Expense' } }))}
-                                    className={cn(
-                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
-                                      newCategorySettings[name]?.type === 'Expense'
-                                        ? "bg-red-600 text-white border-red-600 shadow-sm"
-                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
-                                    )}
-                                  >
-                                    Expense
-                                  </button>
-                                  <button 
-                                    disabled={!newCategorySettings[name]?.create}
-                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Asset' } }))}
-                                    className={cn(
-                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
-                                      newCategorySettings[name]?.type === 'Asset'
-                                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
-                                    )}
-                                  >
-                                    Asset
-                                  </button>
-                                  <button 
-                                    disabled={!newCategorySettings[name]?.create}
-                                    onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Liability' } }))}
-                                    className={cn(
-                                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all",
-                                      newCategorySettings[name]?.type === 'Liability'
-                                        ? "bg-orange-600 text-white border-orange-600 shadow-sm"
-                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
-                                    )}
-                                  >
-                                    Liability
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {feedback && step === 'create-categories' && (
-                      <div className={cn(
-                        "p-4 rounded-xl flex items-center gap-3",
-                        feedback.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                      )}>
-                        <p className="text-sm font-medium">{feedback.message}</p>
-                      </div>
-                    )}
-                  </div>
-                ) : step === 'resolve' ? (
-                  <div className="space-y-6">
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
-                      <AlertCircle size={20} className="text-amber-600" />
-                      <div>
-                        <h4 className="text-sm font-bold text-amber-900">Unresolved Categories Detected</h4>
-                        <p className="text-xs text-amber-700">The following categories were found in your file but don't exist in your budget yet. Choose how to handle them.</p>
-                      </div>
-                    </div>
-                    <div className="border border-slate-100 rounded-xl shadow-sm overflow-hidden bg-white">
-                      <table className="w-full text-left border-collapse">
-                        <thead className="bg-slate-50 border-b border-slate-100">
-                          <tr>
-                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Found in File</th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {unresolvedNames.filter(name => !newCategorySettings[name]?.create).map(name => (
-                            <tr key={name} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4">
-                                <span className="text-sm font-bold text-slate-900">{name}</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-4">
-                                  <button 
-                                    onClick={() => setResolutions(prev => ({ ...prev, [name]: { type: 'create' } }))}
-                                    className={cn(
-                                      "px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border",
-                                      resolutions[name]?.type === 'create' 
-                                        ? "bg-[#86BC24] text-white border-[#86BC24] shadow-sm" 
-                                        : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-                                    )}
-                                  >
-                                    Create New
-                                  </button>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase">or</span>
-                                    <div className="relative">
-                                      <select 
-                                        value={resolutions[name]?.type === 'map' ? resolutions[name]?.target : ''}
-                                        onChange={(e) => setResolutions(prev => ({ ...prev, [name]: { type: 'map', target: e.target.value } }))}
+                          {unresolvedNames.map(name => {
+                            const currentRes = resolutions[name] || { type: 'create' };
+                            const isCreate = currentRes.type === 'create';
+                            const targetVal = currentRes.target || '';
+                            const selectedType = newCategorySettings[name]?.type || 'Expense';
+                            
+                            return (
+                              <tr key={name} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4">
+                                  <span className="text-sm font-bold text-slate-900">{name}</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center justify-center gap-2 bg-slate-100 p-1 rounded-lg w-fit mx-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setResolutions(prev => ({ ...prev, [name]: { type: 'create' } }));
+                                        setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], create: true } }));
+                                      }}
+                                      className={cn(
+                                        "px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
+                                        isCreate
+                                          ? "bg-white text-slate-900 shadow-sm font-bold"
+                                          : "text-slate-500 hover:text-slate-800"
+                                      )}
+                                    >
+                                      Create New
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setResolutions(prev => ({ ...prev, [name]: { type: 'map', target: targetVal } }));
+                                        setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], create: false } }));
+                                      }}
+                                      className={cn(
+                                        "px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
+                                        !isCreate
+                                          ? "bg-white text-slate-900 shadow-sm font-bold"
+                                          : "text-slate-500 hover:text-slate-800"
+                                      )}
+                                    >
+                                      Map to Existing
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  {isCreate ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <button 
+                                        type="button"
+                                        onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Income' } }))}
                                         className={cn(
-                                          "p-2 bg-white border rounded-lg text-xs font-bold outline-none appearance-none pr-8 min-w-[200px]",
-                                          resolutions[name]?.type === 'map' ? "border-[#86BC24] text-[#86BC24]" : "border-slate-200 text-slate-500"
+                                          "px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-all",
+                                          selectedType === 'Income'
+                                            ? "bg-green-600 text-white border-green-600 shadow-sm"
+                                            : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
                                         )}
                                       >
-                                        <option value="">Map to Existing...</option>
-                                        {finData.budgets.map(b => (
-                                          <option key={b.id} value={b.name}>{b.name}</option>
+                                        Income
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Expense' } }))}
+                                        className={cn(
+                                          "px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-all",
+                                          selectedType === 'Expense'
+                                            ? "bg-red-600 text-white border-red-600 shadow-sm"
+                                            : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                        )}
+                                      >
+                                        Expense
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Asset' } }))}
+                                        className={cn(
+                                          "px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-all",
+                                          selectedType === 'Asset'
+                                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                            : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                        )}
+                                      >
+                                        Asset
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setNewCategorySettings(prev => ({ ...prev, [name]: { ...prev[name], type: 'Liability' } }))}
+                                        className={cn(
+                                          "px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-all",
+                                          selectedType === 'Liability'
+                                            ? "bg-orange-600 text-white border-orange-600 shadow-sm"
+                                            : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                        )}
+                                      >
+                                        Liability
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="relative w-full max-w-[280px]">
+                                      <select 
+                                        value={targetVal}
+                                        onChange={(e) => setResolutions(prev => ({ ...prev, [name]: { type: 'map', target: e.target.value } }))}
+                                        className={cn(
+                                          "w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-bold outline-none appearance-none pr-8",
+                                          targetVal ? "border-[#86BC24] text-[#86BC24]" : "border-slate-200 text-slate-500"
+                                        )}
+                                      >
+                                        <option value="">Choose matching budget...</option>
+                                        {incomeExpenseBudgets.map(b => (
+                                          <option 
+                                            key={b.id} 
+                                            value={b.name}
+                                            style={{ color: (b.type || '').toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}
+                                          >
+                                            {b.name} ({b.type || 'Expense'})
+                                          </option>
                                         ))}
                                       </select>
                                       <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                         <ArrowDown size={10} />
                                       </div>
                                     </div>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
+
+                    {feedback && step === 'resolve' && (
+                      <div className={cn(
+                        "p-4 rounded-xl flex items-center gap-3 animate-in fade-in duration-200",
+                        feedback.type === 'success' ? "bg-green-50 text-green-700 border border-green-100" : "bg-red-50 text-red-700 border border-red-100"
+                      )}>
+                        {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                        <p className="text-sm font-medium">{feedback.message}</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -1574,9 +1593,9 @@ export default function ExpenseUpload() {
                                        )}
                                      >
                                         <option value="">Select Category...</option>
-                                        {finData.budgets.map(b => (
-                                          <option key={b.id} value={b.name} className="text-slate-900 bg-white">
-                                            {b.name}
+                                        {incomeExpenseBudgets.map(b => (
+                                          <option key={b.id} value={b.name} style={{ color: (b.type || '').toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}>
+                                            {b.name} ({b.type || 'Expense'})
                                           </option>
                                         ))}
                                      </select>
@@ -1636,17 +1655,10 @@ export default function ExpenseUpload() {
                       onClick={() => {
                         if (step === 'preview') {
                           if (unresolvedNames.length > 0) {
-                            const remainingToMap = unresolvedNames.filter(name => !newCategorySettings[name]?.create);
-                            if (remainingToMap.length > 0) {
-                              setStep('resolve');
-                            } else {
-                              setStep('create-categories');
-                            }
+                            setStep('resolve');
                           } else {
                             setStep('upload');
                           }
-                        } else if (step === 'resolve') {
-                          setStep('create-categories');
                         } else {
                           setStep('upload');
                         }
@@ -1657,31 +1669,23 @@ export default function ExpenseUpload() {
                       Back
                     </button>
                   )}
-                  {step === 'create-categories' ? (
+                  {step === 'resolve' ? (
                      <button 
-                      onClick={handleCreateCategories}
-                      disabled={isCreatingCategories}
+                      onClick={finalizeResolution}
+                      disabled={isProcessing}
                       className="px-8 h-10 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
                     >
-                      {isCreatingCategories ? (
+                      {isProcessing ? (
                         <>
                           <Loader2 size={16} className="animate-spin" />
                           Processing...
                         </>
                       ) : (
                         <>
-                          Create & Import
+                          Continue to Preview
                           <ChevronRight size={16} />
                         </>
                       )}
-                    </button>
-                  ) : step === 'resolve' ? (
-                     <button 
-                      onClick={finalizeResolution}
-                      className="px-8 h-10 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
-                    >
-                      Complete Import
-                      <ChevronRight size={16} />
                     </button>
                   ) : step === 'preview' ? (
                     <button 
