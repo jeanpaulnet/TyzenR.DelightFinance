@@ -1,8 +1,8 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { useApp, getBusinessSettings } from '../../AppContext';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, doc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { logEvent } from '../../lib/audit';
 import { 
@@ -267,7 +267,6 @@ export default function ExpenseUpload() {
   
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<'upload' | 'create-categories' | 'resolve' | 'preview'>('upload');
-  const [expectedType, setExpectedType] = useState<'excel' | 'csv'>('excel');
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCreatingCategories, setIsCreatingCategories] = useState(false);
@@ -281,6 +280,54 @@ export default function ExpenseUpload() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Import options state (Standard CSV vs Bank Statement Excel with WD split)
+  const [importOption, setImportOption] = useState<'csv' | 'bank_excel'>('csv');
+  const [showRulesEditor, setShowRulesEditor] = useState(false);
+  const [firestoreRules, setFirestoreRules] = useState<any[]>([]);
+
+  // Editing Rule Form States
+  const [editingRule, setEditingRule] = useState<any | null>(null);
+  const [ruleDescKeyword, setRuleDescKeyword] = useState('');
+  const [ruleDescOperator, setRuleDescOperator] = useState<'contains' | 'equals'>('contains');
+  const [ruleRefKeyword, setRuleRefKeyword] = useState('');
+  const [ruleRefOperator, setRuleRefOperator] = useState<'contains' | 'equals'>('contains');
+  const [ruleFlow, setRuleFlow] = useState<'any' | 'withdrawal' | 'deposit'>('any');
+  const [ruleCategory, setRuleCategory] = useState('');
+
+  // Local/Firestore rules sync effect
+  useEffect(() => {
+    if (!user?.uid || !activeBusinessId) {
+      setFirestoreRules([]);
+      return;
+    }
+    const q = query(
+      collection(db, 'users', user.uid, 'import_rules'),
+      where('businessId', '==', activeBusinessId)
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      setFirestoreRules(list);
+    }, (error) => {
+      console.warn("Error listening to import rules:", error);
+    });
+    return () => unsub();
+  }, [user?.uid, activeBusinessId]);
+
+  // Combined rule set to evaluate
+  const combinedRules = useMemo(() => {
+    const list = [...firestoreRules];
+    const firestoreIds = new Set(list.map(r => r.id));
+    (finData.rules || []).forEach(r => {
+      if (!firestoreIds.has(r.id)) {
+        list.push(r);
+      }
+    });
+    return list;
+  }, [firestoreRules, finData.rules]);
 
   React.useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -372,7 +419,23 @@ export default function ExpenseUpload() {
       if (!dateHeader) dateHeader = findBestHeader(headers, HEADER_KEYWORDS.date);
       if (!descHeader) descHeader = findBestHeader(headers, HEADER_KEYWORDS.description);
       if (!catHeader) catHeader = findBestHeader(headers, HEADER_KEYWORDS.category);
-      if (!amountHeader) {
+      
+      if (importOption === 'bank_excel') {
+        // Bias explicitly matching Withdrawal & Deposit columns
+        expenseHeader = headers.find(h => {
+          const l = h.toLowerCase().trim();
+          return l === 'withdrawal' || l.includes('withdrawal') || l === 'withdrawal amount' || l === 'withdrwl' || l === 'debit' || l === 'dr';
+        });
+        incomeHeader = headers.find(h => {
+          const l = h.toLowerCase().trim();
+          return l === 'deposit' || l.includes('deposit') || l === 'deposit amount' || l === 'credit' || l === 'cr';
+        });
+        if (incomeHeader || expenseHeader) {
+          amountHeader = undefined;
+        }
+      }
+
+      if (!amountHeader && !incomeHeader && !expenseHeader) {
         amountHeader = findBestHeader(headers, HEADER_KEYWORDS.amount);
         incomeHeader = findBestHeader(headers, HEADER_KEYWORDS.income);
         expenseHeader = findBestHeader(headers, HEADER_KEYWORDS.expense);
@@ -419,7 +482,7 @@ export default function ExpenseUpload() {
 
       setWasDualColumnAmount(!!(incomeHeader && expenseHeader));
 
-      const activeRules = [...(finData.rules || [])].sort((a, b) => a.order - b.order).filter(r => r.active);
+      const activeRules = [...combinedRules].sort((a, b) => (a.order || 0) - (b.order || 0)).filter(r => r.active);
 
       const transactions: ParsedTransaction[] = rows.map((row, idx) => {
         let amount = 0;
@@ -451,39 +514,6 @@ export default function ExpenseUpload() {
         const rawCategory = (catHeader ? String(row[catHeader] || '') : '').trim();
         const description = (descHeader ? String(row[descHeader] || '') : '').trim() || 'No description';
         
-        let category = rawCategory;
-        let matchedByRule = false;
-
-        // Apply rules
-        for (const rule of activeRules) {
-          const isMatch = rule.conditions.every((cond: any) => {
-            const fieldVal = String(description || '').toLowerCase();
-            const searchVal = String(cond.value || '').toLowerCase();
-            if (cond.field !== 'description') return false; 
-
-            switch (cond.operator) {
-              case 'contains': return fieldVal.includes(searchVal);
-              case 'equals': return fieldVal === searchVal;
-              default: return false;
-            }
-          });
-
-          if (isMatch) {
-            const action = rule.actions.find((a: any) => a.type === 'setCategory');
-            if (action) {
-              category = action.value;
-              matchedByRule = true;
-              break;
-            }
-          }
-        }
-
-        if (!matchedByRule && !category) {
-          category = type; 
-        }
-
-        const detectedType = categoryTypeMap.get((category || '').toLowerCase()) || type;
-
         // Robust date parsing
         const formattedDate = parseRobustDate(dateHeader ? row[dateHeader] : null);
 
@@ -517,6 +547,56 @@ export default function ExpenseUpload() {
         });
 
         const finalNotes = notesParts.join(" | ");
+        
+        let category = rawCategory;
+        let matchedByRule = false;
+
+        // Apply rules
+        for (const rule of activeRules) {
+          const isMatch = rule.conditions?.every((cond: any) => {
+            if (cond.field === 'description') {
+              const fieldVal = String(description || '').toLowerCase();
+              const searchVal = String(cond.value || '').toLowerCase();
+              return cond.operator === 'equals' ? (fieldVal === searchVal) : fieldVal.includes(searchVal);
+            }
+            if (cond.field === 'reference') {
+              const fieldVal = String(finalNotes || '').toLowerCase();
+              const searchVal = String(cond.value || '').toLowerCase();
+              return cond.operator === 'equals' ? (fieldVal === searchVal) : fieldVal.includes(searchVal);
+            }
+            if (cond.field === 'flow') {
+              if (cond.value === 'withdrawal') return type === 'Expense';
+              if (cond.value === 'deposit') return type === 'Income';
+              return true;
+            }
+            const rawFieldVal = cond.field === 'amount' ? amount : (cond.field === 'description' ? description : '');
+            const fieldVal = String(rawFieldVal || '').toLowerCase();
+            const searchVal = String(cond.value || '').toLowerCase();
+
+            switch (cond.operator) {
+              case 'contains': return fieldVal.includes(searchVal);
+              case 'equals': return fieldVal === searchVal;
+              case 'greaterThan': return parseFloat(fieldVal) > parseFloat(searchVal);
+              case 'lessThan': return parseFloat(fieldVal) < parseFloat(searchVal);
+              default: return false;
+            }
+          });
+
+          if (isMatch) {
+            const action = rule.actions?.find((a: any) => a.type === 'setCategory');
+            if (action) {
+              category = action.value;
+              matchedByRule = true;
+              break;
+            }
+          }
+        }
+
+        if (!matchedByRule && !category) {
+          category = type; 
+        }
+
+        const detectedType = categoryTypeMap.get((category || '').toLowerCase()) || type;
 
         let tx: ParsedTransaction = {
           id: `row-${idx}`,
@@ -658,14 +738,30 @@ export default function ExpenseUpload() {
   };
 
   const applyRulesToData = () => {
-    const activeRules = [...(finData.rules || [])].sort((a, b) => a.order - b.order).filter(r => r.active);
+    const activeRules = [...combinedRules].sort((a, b) => (a.order || 0) - (b.order || 0)).filter(r => r.active);
     
     setParsedData(prev => prev.map(tx => {
       let updatedTx = { ...tx };
       
       for (const rule of activeRules) {
-        const isMatch = rule.conditions.every((cond: any) => {
-          const fieldVal = String((updatedTx as any)[cond.field] || '').toLowerCase();
+        const isMatch = rule.conditions?.every((cond: any) => {
+          if (cond.field === 'description') {
+            const fieldVal = String(updatedTx.description || '').toLowerCase();
+            const searchVal = String(cond.value || '').toLowerCase();
+            return cond.operator === 'equals' ? (fieldVal === searchVal) : fieldVal.includes(searchVal);
+          }
+          if (cond.field === 'reference') {
+            const fieldVal = String(updatedTx.reference || '').toLowerCase();
+            const searchVal = String(cond.value || '').toLowerCase();
+            return cond.operator === 'equals' ? (fieldVal === searchVal) : fieldVal.includes(searchVal);
+          }
+          if (cond.field === 'flow') {
+            if (cond.value === 'withdrawal') return (updatedTx.type || '').toLowerCase() === 'expense';
+            if (cond.value === 'deposit') return (updatedTx.type || '').toLowerCase() === 'income';
+            return true;
+          }
+          const rawFieldVal = cond.field === 'amount' ? updatedTx.amount : (cond.field === 'description' ? updatedTx.description : '');
+          const fieldVal = String(rawFieldVal || '').toLowerCase();
           const searchVal = String(cond.value || '').toLowerCase();
 
           switch (cond.operator) {
@@ -678,7 +774,7 @@ export default function ExpenseUpload() {
         });
 
         if (isMatch) {
-          for (const action of rule.actions) {
+          for (const action of rule.actions || []) {
             if (action.type === 'setCategory') {
               updatedTx.category = action.value;
               const newType = categoryTypeMap.get((action.value || '').toLowerCase());
@@ -694,7 +790,7 @@ export default function ExpenseUpload() {
       return updatedTx;
     }));
     
-    setFeedback({ type: 'success', message: 'Rules applied successfully.' });
+    setFeedback({ type: 'success', message: 'Rules applied successfully to pre-import data.' });
     setTimeout(() => setFeedback(null), 3000);
   };
 
@@ -883,13 +979,8 @@ export default function ExpenseUpload() {
     const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
     const isCsvFile = fileName.endsWith('.csv') || fileName.endsWith('.txt') || fileName.endsWith('.tsv');
 
-    if (expectedType === 'excel' && !isExcelFile) {
-      setFeedback({ type: 'error', message: 'Invalid Excel File!' });
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-    if (expectedType === 'csv' && !isCsvFile) {
-      setFeedback({ type: 'error', message: 'Invalid Comma Separated!' });
+    if (!isExcelFile && !isCsvFile) {
+      setFeedback({ type: 'error', message: 'Invalid file style! Please select a valid Excel or CSV/Text file.' });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -1151,6 +1242,95 @@ export default function ExpenseUpload() {
     document.body.removeChild(link);
   };
 
+  const downloadBankExcelTemplate = () => {
+    const headers = ['Date', 'Description', 'Withdrawal', 'Deposit', 'Reference'];
+    const now = new Date();
+    const data = [
+      { Date: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0], Description: 'Uber Ride Taxi', Withdrawal: 25.50, Deposit: '', Reference: 'TXN-101' },
+      { Date: new Date(now.getFullYear(), now.getMonth(), 2).toISOString().split('T')[0], Description: 'Salary Paycheck', Withdrawal: '', Deposit: 3200.00, Reference: 'TXN-102' },
+      { Date: new Date(now.getFullYear(), now.getMonth(), 3).toISOString().split('T')[0], Description: 'Starbucks Store Cafe', Withdrawal: 6.80, Deposit: '', Reference: 'TXN-103' },
+      { Date: new Date(now.getFullYear(), now.getMonth(), 4).toISOString().split('T')[0], Description: 'Invoice Consulting Fee Received', Withdrawal: '', Deposit: 450.00, Reference: 'TXN-104' },
+      { Date: new Date(now.getFullYear(), now.getMonth(), 5).toISOString().split('T')[0], Description: 'Office Supplies Web Store', Withdrawal: 75.00, Deposit: '', Reference: 'TXN-105' }
+    ];
+    
+    const worksheet = XLSX.utils.json_to_sheet(data, { header: headers });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Bank Template");
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "bank_excel_template.xlsx");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!ruleId || !user?.uid) return;
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'import_rules', ruleId));
+      setFeedback({ type: 'success', message: 'Rule deleted successfully.' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Failed to delete rule:", err);
+      setFeedback({ type: 'error', message: 'Failed to delete rule.' });
+    }
+  };
+
+  const handleSaveRule = async (rule: any) => {
+    if (!user?.uid || !activeBusinessId) return;
+    try {
+      const ruleData = {
+        name: rule.name || `${rule.conditions[0]?.value || 'Rule'} → ${rule.actions[0]?.value}`,
+        active: true,
+        businessId: activeBusinessId,
+        userId: user.uid,
+        conditions: rule.conditions || [
+          { field: 'description', operator: 'contains', value: '' }
+        ],
+        actions: rule.actions || [
+          { type: 'setCategory', value: '' }
+        ],
+        updatedAt: new Date().toISOString()
+      };
+
+      if (rule.id) {
+        await setDoc(doc(db, 'users', user.uid, 'import_rules', rule.id), ruleData, { merge: true });
+        
+        await logEvent({
+          userId: user.uid,
+          userEmail: user.email || 'unknown',
+          userName: user.displayName || 'Delight User',
+          action: 'UPDATE',
+          resourceType: 'import_rule',
+          details: `Updated import rule: ${ruleData.name}`
+        });
+      } else {
+        await addDoc(collection(db, 'users', user.uid, 'import_rules'), {
+          ...ruleData,
+          order: combinedRules.length,
+          createdAt: new Date().toISOString()
+        });
+
+        await logEvent({
+          userId: user.uid,
+          userEmail: user.email || 'unknown',
+          userName: user.displayName || 'Delight User',
+          action: 'CREATE',
+          resourceType: 'import_rule',
+          details: `Created import rule: ${ruleData.name}`
+        });
+      }
+      setFeedback({ type: 'success', message: 'Rule saved successfully.' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Failed to save rule:", err);
+      setFeedback({ type: 'error', message: 'Failed to save rule in Firestore.' });
+    }
+  };
+
   return (
     <>
       <button 
@@ -1242,34 +1422,128 @@ export default function ExpenseUpload() {
                 )}
                 {step === 'upload' ? (
                   <div className="space-y-6">
+                    {/* Option Selector */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Option 1: Standard CSV Import */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImportOption('csv');
+                          setFeedback(null);
+                        }}
+                        className={cn(
+                          "p-4 rounded-xl border-2 text-left transition-all flex items-start gap-3 outline-none cursor-pointer",
+                          importOption === 'csv'
+                            ? "border-[#86BC24] bg-green-50/10 shadow-sm"
+                            : "border-slate-100 hover:border-slate-200 bg-white"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+                          importOption === 'csv' ? "bg-[#86BC24] text-white" : "bg-slate-100 text-slate-500"
+                        )}>
+                          <FileText size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 font-sans tracking-tight">Standard CSV Import</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Import generic CSV file with Date, Category, and single Amount column.</p>
+                        </div>
+                      </button>
+
+                      {/* Option 2: Bank Statement Excel Import */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImportOption('bank_excel');
+                          setFeedback(null);
+                        }}
+                        className={cn(
+                          "p-4 rounded-xl border-2 text-left transition-all flex items-start gap-3 outline-none cursor-pointer",
+                          importOption === 'bank_excel'
+                            ? "border-[#86BC24] bg-green-50/10 shadow-sm"
+                            : "border-slate-100 hover:border-slate-200 bg-white"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+                          importOption === 'bank_excel' ? "bg-[#86BC24] text-white" : "bg-slate-100 text-slate-500"
+                        )}>
+                          <Table size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 font-sans tracking-tight">Bank Excel Import</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Import bank statements with separate Withdrawal & Deposit columns.</p>
+                        </div>
+                      </button>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
-                        <div className="p-4 bg-[#F8FAFC] border border-slate-100 rounded-xl">
-                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <HelpCircle size={14} className="text-[#86BC24]" />
-                            Instructions
-                          </h3>
-                          <ul className="space-y-2">
-                             {[
-                               'Upload any CSV, Excel (.xlsx, .xls) or Text file from your bank or ERP.',
-                               'Columns are automatically mapped by keywords.',
-                               'Handles dual columns (Credits/Debits or In/Out).',
-                               'Existing categories are automatically detected.'
-                             ].map((text, i) => (
-                               <li key={i} className="text-[11px] text-slate-500 flex gap-2">
-                                 <span className="text-[#86BC24]">•</span>
-                                 {text}
-                                </li>
-                             ))}
-                          </ul>
-                          <div className="mt-4 pt-4 border-t border-slate-100">
-                             <button 
-                               onClick={downloadSampleCSV}
-                               className="text-[10px] font-bold uppercase tracking-widest text-[#86BC24] hover:underline flex items-center gap-2"
-                             >
-                               <FileText size={12} />
-                               Download Sample Template
-                             </button>
+                        <div className="p-4 bg-[#F8FAFC] border border-slate-100 rounded-xl space-y-4">
+                          <div>
+                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
+                              <HelpCircle size={14} className="text-[#86BC24]" />
+                              Instructions
+                            </h3>
+                            <ul className="space-y-2">
+                              {importOption === 'csv' ? (
+                                [
+                                  'Upload any CSV or Text file containing list of expenses.',
+                                  'Columns are automatically mapped (Date, Amount, Category, Description).',
+                                  'Ideal for standard transaction logs and basic sheets.',
+                                  'Existing categories are automatically detected and matched.'
+                                ].map((text, i) => (
+                                  <li key={i} className="text-[11px] text-slate-500 flex gap-2">
+                                    <span className="text-[#86BC24]">•</span>
+                                    {text}
+                                  </li>
+                                ))
+                              ) : (
+                                [
+                                  'Upload a bank statement spreadsheet (.xlsx, .xls) or dual-column CSV.',
+                                  'Supports separate Withdrawal and Deposit / Debit and Credit columns.',
+                                  'Configure automated rules to auto-categorize based on details & amounts.',
+                                  'Manage with Rules Manager next to template download.'
+                                ].map((text, i) => (
+                                  <li key={i} className="text-[11px] text-slate-500 flex gap-2">
+                                    <span className="text-[#86BC24]">•</span>
+                                    {text}
+                                  </li>
+                                ))
+                              )}
+                            </ul>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-150 flex flex-wrap items-center gap-4">
+                            {importOption === 'csv' ? (
+                              <button 
+                                type="button"
+                                onClick={downloadSampleCSV}
+                                className="text-[10px] font-bold uppercase tracking-widest text-[#86BC24] hover:underline flex items-center gap-2"
+                              >
+                                <FileText size={12} />
+                                Download Sample CSV
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={downloadBankExcelTemplate}
+                                  className="text-[10px] font-bold uppercase tracking-widest text-[#86BC24] hover:underline flex items-center gap-2"
+                                >
+                                  <Table size={12} />
+                                  Download Bank Excel Template
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowRulesEditor(true)}
+                                  className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 hover:underline flex items-center gap-1.5"
+                                >
+                                  <Settings2 size={12} />
+                                  Rules Manager
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1286,10 +1560,10 @@ export default function ExpenseUpload() {
                         )}
                       >
                         <div className={cn(
-                          "w-20 h-20 rounded-3xl flex items-center justify-center mb-6 transition-all duration-300",
+                          "w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all duration-300",
                           isDragging ? "bg-white text-[#86BC24] shadow-sm animate-pulse" : "bg-slate-50 text-slate-400"
                         )}>
-                          <UploadCloud size={32} />
+                          <UploadCloud size={28} />
                         </div>
                         
                         <div className="space-y-4">
@@ -1302,41 +1576,19 @@ export default function ExpenseUpload() {
                             Select File
                           </button>
 
-                          <div className="flex items-center justify-center gap-6 pt-2">
-                            <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest cursor-pointer select-none">
-                              <input 
-                                type="radio" 
-                                name="expectedFileType" 
-                                value="excel" 
-                                checked={expectedType === 'excel'} 
-                                onChange={() => setExpectedType('excel')}
-                                className="w-3.5 h-3.5 rounded-full border-slate-300 text-[#86BC24] focus:ring-[#86BC24] focus:ring-offset-0 cursor-pointer"
-                              />
-                              Excel File
-                            </label>
-                            <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest cursor-pointer select-none">
-                              <input 
-                                type="radio" 
-                                name="expectedFileType" 
-                                value="csv" 
-                                checked={expectedType === 'csv'} 
-                                onChange={() => setExpectedType('csv')}
-                                className="w-3.5 h-3.5 rounded-full border-slate-300 text-[#86BC24] focus:ring-[#86BC24] focus:ring-offset-0 cursor-pointer"
-                              />
-                              Comma Separated
-                            </label>
-                          </div>
-
                           <p className={cn(
-                            "text-[10px] uppercase font-bold tracking-widest transition-colors",
+                            "text-[10px] uppercase font-bold tracking-widest transition-colors pt-2",
                             isDragging ? "text-[#86BC24]" : "text-slate-400"
                           )}>
-                            {isDragging ? 'Drop file now' : 'or drag and drop here'}
+                            {isDragging ? 'Drop file now' : `or drag and drop ${importOption === 'csv' ? 'CSV' : 'Excel statement'} here`}
                           </p>
                         </div>
 
                         <input 
-                          type="file" accept=".csv, .txt, .xlsx, .xls" className="hidden" ref={fileInputRef} 
+                          type="file" 
+                          accept={importOption === 'csv' ? '.csv, .txt' : '.xlsx, .xls, .csv'} 
+                          className="hidden" 
+                          ref={fileInputRef} 
                           onChange={handleFileUpload}
                         />
                       </div>
@@ -1480,15 +1732,18 @@ export default function ExpenseUpload() {
                                         )}
                                       >
                                         <option value="">Choose matching budget...</option>
-                                        {incomeExpenseBudgets.map(b => (
-                                          <option 
-                                            key={b.id} 
-                                            value={b.name}
-                                            style={{ color: (b.type || '').toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}
-                                          >
-                                            {b.name} ({b.type || 'Expense'})
-                                          </option>
-                                        ))}
+                                        {incomeExpenseBudgets.map(b => {
+                                          const isInc = (b.type || '').toLowerCase() === 'income';
+                                          return (
+                                            <option 
+                                              key={b.id} 
+                                              value={b.category || b.name}
+                                              style={{ color: isInc ? '#10b981' : '#f43f5e' }}
+                                            >
+                                              {isInc ? '🟢' : '🔴'} {b.category || b.name} ({b.type || 'Expense'})
+                                            </option>
+                                          );
+                                        })}
                                       </select>
                                       <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                         <ArrowDown size={10} />
@@ -1515,6 +1770,38 @@ export default function ExpenseUpload() {
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* Pre-import Preview Toolbar */}
+                    <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border border-slate-150 p-4 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                          <Settings2 size={16} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">Pre-Import Automation Toolbar</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-0.5">Edit rules and test matches before finalizing import</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowRulesEditor(true)}
+                          className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+                        >
+                          <Settings2 size={14} className="text-[#86BC24]" />
+                          Rules Manager
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={applyRulesToData}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+                        >
+                          <RefreshCw size={14} />
+                          Apply Rules
+                        </button>
+                      </div>
+                    </div>
                      <div className="overflow-x-scroll border border-slate-100 rounded-xl shadow-sm">
                        <table className="w-full text-left border-collapse min-w-[700px]">
                          <thead>
@@ -1593,11 +1880,14 @@ export default function ExpenseUpload() {
                                        )}
                                      >
                                         <option value="">Select Category...</option>
-                                        {incomeExpenseBudgets.map(b => (
-                                          <option key={b.id} value={b.name} style={{ color: (b.type || '').toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}>
-                                            {b.name} ({b.type || 'Expense'})
-                                          </option>
-                                        ))}
+                                        {incomeExpenseBudgets.map(b => {
+                                          const isInc = (b.type || '').toLowerCase() === 'income';
+                                          return (
+                                            <option key={b.id} value={b.category || b.name} style={{ color: isInc ? '#10b981' : '#f43f5e' }}>
+                                              {isInc ? '🟢' : '🔴'} {b.category || b.name} ({b.type || 'Expense'})
+                                            </option>
+                                          );
+                                        })}
                                      </select>
                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                        <ArrowDown size={10} />
@@ -1714,11 +2004,410 @@ export default function ExpenseUpload() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Interactive Pre-Import Rules Manager Overlay */}
+      {showRulesEditor && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-slate-100">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-150 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#86BC24]/10 flex items-center justify-center text-[#86BC24]">
+                  <Settings2 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Pre-Import Rules Manager</h3>
+                  <p className="text-xs text-slate-500 font-medium">Create global rules to auto-categorize bank transactions by description and reference filters</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowRulesEditor(false);
+                  setEditingRule(null);
+                }}
+                className="w-8 h-8 rounded-lg hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Split Screen Panel */}
+            <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-150">
+              {/* Left Column: Rule list */}
+              <div className="col-span-1 md:col-span-2 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">Active Rules ({combinedRules.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingRule({
+                        id: '',
+                        name: '',
+                        conditions: [],
+                        actions: [{ type: 'setCategory', value: '' }]
+                      });
+                      setRuleDescKeyword('');
+                      setRuleDescOperator('contains');
+                      setRuleRefKeyword('');
+                      setRuleRefOperator('contains');
+                      setRuleFlow('any');
+                      setRuleCategory('');
+                    }}
+                    className="text-[10px] bg-slate-900 text-white font-bold uppercase tracking-widest px-2.5 py-1 rounded hover:bg-[#86BC24] transition-colors cursor-pointer"
+                  >
+                    + Add New Rule
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {combinedRules.map((rule, index) => {
+                    const descCond = rule.conditions?.find((c: any) => c.field === 'description');
+                    const refCond = rule.conditions?.find((c: any) => c.field === 'reference');
+                    const flowCond = rule.conditions?.find((c: any) => c.field === 'flow');
+                    const amtCond = rule.conditions?.find((c: any) => c.field === 'amount'); // legacy fallback
+                    const catAction = rule.actions?.find((a: any) => a.type === 'setCategory');
+                    const isSystem = !rule.userId;
+
+                    let subtitleParts: string[] = [];
+                    if (descCond?.value) subtitleParts.push(`Desc: "${descCond.value}"`);
+                    if (refCond?.value) subtitleParts.push(`Ref: "${refCond.value}"`);
+                    if (flowCond?.value && flowCond.value !== 'any') {
+                      subtitleParts.push(flowCond.value === 'withdrawal' ? 'Withdrawals' : 'Deposits');
+                    }
+                    if (amtCond?.value) subtitleParts.push(`Amt ${amtCond.operator} ${amtCond.value}`);
+
+                    const displayName = rule.name || (subtitleParts.length > 0 ? subtitleParts.join(' & ') : 'General Rule');
+                    
+                    return (
+                      <div 
+                        key={rule.id || index}
+                        onClick={() => {
+                          setEditingRule(rule);
+                          setRuleDescKeyword(descCond?.value || '');
+                          setRuleDescOperator((descCond?.operator === 'equals' ? 'equals' : 'contains') as 'contains' | 'equals');
+                          setRuleRefKeyword(refCond?.value || '');
+                          setRuleRefOperator((refCond?.operator === 'equals' ? 'equals' : 'contains') as 'contains' | 'equals');
+                          setRuleFlow((flowCond?.value || 'any') as 'any' | 'withdrawal' | 'deposit');
+                          setRuleCategory(catAction?.value || '');
+                        }}
+                        className={cn(
+                          "p-3 rounded-xl border text-left transition-all cursor-pointer group relative",
+                          editingRule?.id === rule.id
+                            ? "bg-white border-indigo-500 shadow-md shadow-indigo-500/5 ring-1 ring-indigo-500"
+                            : "bg-white border-slate-200 hover:border-slate-350"
+                        )}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <p className="text-xs font-bold text-slate-800 tracking-tight line-clamp-1">{displayName}</p>
+                          {isSystem ? (
+                            <span className="text-[8px] bg-sky-50 text-sky-600 font-bold uppercase tracking-wider px-1 py-0.5 rounded border border-sky-100 shrink-0">System</span>
+                          ) : (
+                            <span className="text-[8px] bg-indigo-50 text-indigo-600 font-bold uppercase tracking-wider px-1 py-0.5 rounded border border-indigo-100 shrink-0">Custom</span>
+                          )}
+                        </div>
+
+                        <div className="mt-2 space-y-1 text-[10px] text-slate-500">
+                          {descCond && descCond.value && (
+                            <p className="flex items-center gap-1">
+                              <span className="font-semibold text-slate-400">If description:</span> 
+                              <span className="text-slate-800 font-mono bg-slate-100 px-1 rounded">{descCond.operator} "{descCond.value}"</span>
+                            </p>
+                          )}
+                          {refCond && refCond.value && (
+                            <p className="flex items-center gap-1">
+                              <span className="font-semibold text-slate-400">If reference:</span> 
+                              <span className="text-slate-800 font-mono bg-slate-100 px-1 rounded">{refCond.operator} "{refCond.value}"</span>
+                            </p>
+                          )}
+                          {flowCond && flowCond.value && flowCond.value !== 'any' && (
+                            <p className="flex items-center gap-1">
+                              <span className="font-semibold text-slate-400">If type:</span> 
+                              <span className="text-slate-800 font-bold bg-slate-100 px-1 rounded uppercase min-w-[50px] text-center text-[9px] text-[#86BC24]">
+                                {flowCond.value === 'withdrawal' ? 'Withdrawal' : 'Deposit'}
+                              </span>
+                            </p>
+                          )}
+                          {amtCond && (
+                            <p className="flex items-center gap-1">
+                              <span className="font-semibold text-slate-400">If amount:</span> 
+                              <span className="text-slate-800 font-mono bg-slate-100 px-1 rounded">{amtCond.operator} {amtCond.value}</span>
+                            </p>
+                          )}
+                          <p className="flex items-center gap-1 pt-1 border-t border-slate-100/60 mt-1">
+                            <span className="font-semibold text-[#86BC24]">Assign:</span> 
+                            <span className="text-emerald-700 font-bold">{catAction?.value || '(none)'}</span>
+                          </p>
+                        </div>
+
+                        {!isSystem && rule.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteRule(rule.id);
+                              if (editingRule?.id === rule.id) setEditingRule(null);
+                            }}
+                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 w-5 h-5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 flex items-center justify-center transition-all bg-white shadow-sm border border-slate-100"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  
+                  {combinedRules.length === 0 && (
+                    <div className="text-center py-12 text-slate-400">
+                      <Settings2 className="mx-auto text-slate-300 mb-2" size={24} />
+                      <p className="text-xs">No active automation rules found.</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Click "+ Add New" to configure a mapping rule.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Add/Edit Panel */}
+              <div className="col-span-1 md:col-span-3 p-6 overflow-y-auto space-y-4">
+                {editingRule ? (() => {
+                  const isSaveDisabled = ruleDescKeyword.trim() === '' && ruleRefKeyword.trim() === '' && ruleFlow === 'any';
+                  
+                  return (
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const conditions: any[] = [];
+                      if (ruleDescKeyword.trim() !== '') {
+                        conditions.push({ field: 'description', operator: ruleDescOperator, value: ruleDescKeyword.trim() });
+                      }
+                      if (ruleRefKeyword.trim() !== '') {
+                        conditions.push({ field: 'reference', operator: ruleRefOperator, value: ruleRefKeyword.trim() });
+                      }
+                      if (ruleFlow !== 'any') {
+                        conditions.push({ field: 'flow', operator: 'equals', value: ruleFlow });
+                      }
+
+                      if (conditions.length === 0) {
+                        return;
+                      }
+
+                      const valName = (() => {
+                        const parts: string[] = [];
+                        if (ruleDescKeyword.trim() !== '') {
+                          parts.push(`Desc contains "${ruleDescKeyword.trim()}"`);
+                        }
+                        if (ruleRefKeyword.trim() !== '') {
+                          parts.push(`Ref contains "${ruleRefKeyword.trim()}"`);
+                        }
+                        if (ruleFlow === 'withdrawal') {
+                          parts.push('is Withdrawal');
+                        } else if (ruleFlow === 'deposit') {
+                          parts.push('is Deposit');
+                        }
+                        return parts.join(' & ') || 'Custom Filter';
+                      })();
+
+                      const actions = [
+                        { type: 'setCategory', value: ruleCategory }
+                      ];
+
+                      handleSaveRule({
+                        id: editingRule.id,
+                        name: valName,
+                        conditions,
+                        actions
+                      });
+                      
+                      setEditingRule(null);
+                    }} className="space-y-4">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                        {editingRule.id ? 'Edit Auto-Mapping Rule' : 'Create New Auto-Mapping Rule'}
+                      </p>
+
+                      {/* Filter 1: Description text matching */}
+                      <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-150 space-y-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" />
+                          Filter 1: Matches Description Text
+                        </p>
+                        
+                        <div className="grid grid-cols-3 gap-2">
+                          <select
+                            value={ruleDescOperator}
+                            onChange={(e: any) => setRuleDescOperator(e.target.value)}
+                            className="col-span-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#86BC24] cursor-pointer font-sans"
+                          >
+                            <option value="contains">Contains</option>
+                            <option value="equals">Equals</option>
+                          </select>
+
+                          <input 
+                            type="text"
+                            value={ruleDescKeyword}
+                            onChange={(e) => setRuleDescKeyword(e.target.value)}
+                            placeholder="Optional keyword (e.g. uber, starbucks)"
+                            className="col-span-2 px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#86BC24]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Filter 2: Reference keyword matching */}
+                      <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-150 space-y-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-505 bg-blue-500 inline-block" />
+                          Filter 2: Matches Reference Text
+                        </p>
+                        
+                        <div className="grid grid-cols-3 gap-2">
+                          <select
+                            value={ruleRefOperator}
+                            onChange={(e: any) => setRuleRefOperator(e.target.value)}
+                            className="col-span-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#86BC24] cursor-pointer font-sans"
+                          >
+                            <option value="contains">Contains</option>
+                            <option value="equals">Equals</option>
+                          </select>
+
+                          <input 
+                            type="text"
+                            value={ruleRefKeyword}
+                            onChange={(e) => setRuleRefKeyword(e.target.value)}
+                            placeholder="Optional keyword or ref ID"
+                            className="col-span-2 px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#86BC24]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Filter 3: Flow type chooser (radio buttons) */}
+                      <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-150 space-y-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                          Filter 3: Transaction Type Flow
+                        </p>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setRuleFlow('any')}
+                            className={cn(
+                              "px-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer",
+                              ruleFlow === 'any'
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-white text-slate-600 border-slate-250 hover:border-slate-350"
+                            )}
+                          >
+                            Either (Any)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRuleFlow('withdrawal')}
+                            className={cn(
+                              "px-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer",
+                              ruleFlow === 'withdrawal'
+                                ? "bg-red-650 bg-red-600 text-white border-red-600"
+                                : "bg-white text-slate-600 border-slate-250 hover:border-slate-350"
+                            )}
+                          >
+                            Withdrawal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRuleFlow('deposit')}
+                            className={cn(
+                              "px-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer",
+                              ruleFlow === 'deposit'
+                                ? "bg-emerald-650 bg-emerald-600 text-white border-emerald-600"
+                                : "bg-white text-slate-600 border-slate-250 hover:border-slate-350"
+                            )}
+                          >
+                            Deposit
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Action: Target Category */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 font-mono">Assign to Category</label>
+                        <select
+                          value={ruleCategory}
+                          onChange={(e) => setRuleCategory(e.target.value)}
+                          required
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] cursor-pointer"
+                        >
+                          <option value="">-- Choose Category --</option>
+                          {incomeExpenseBudgets.map(b => {
+                            const isInc = (b.type || '').toLowerCase() === 'income';
+                            return (
+                              <option key={b.id} value={b.category}>
+                                {isInc ? '🟢' : '🔴'} {b.category} ({b.type})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      {/* Feedback error line */}
+                      {isSaveDisabled && (
+                        <p className="text-[10px] text-amber-600 font-semibold leading-normal bg-amber-50 p-2.5 rounded-lg border border-amber-100 flex items-center gap-2">
+                          ⚠️ Please configure at least 1 of the 3 filters above before saving.
+                        </p>
+                      )}
+
+                      {/* Submit Buttons */}
+                      <div className="flex gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          type="submit"
+                          disabled={isSaveDisabled}
+                          className={cn(
+                            "flex-1 py-2 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer",
+                            isSaveDisabled 
+                              ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
+                              : "bg-[#86BC24] hover:bg-[#75A51F]"
+                          )}
+                        >
+                          Save Rule to Books
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingRule(null);
+                          }}
+                          className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  );
+                })() : (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-8">
+                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mb-3">
+                      <Settings2 size={24} className="text-slate-300" />
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-700">No Rule Selected</h4>
+                    <p className="text-[10px] text-slate-500 max-w-xs mt-1">Select any existing rule from the left column to view/modify, or click custom add rule to create a new mapping matcher.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer feedback */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-150 flex justify-between items-center text-[10px] text-slate-400 font-medium">
+              <span className="flex items-center gap-1 font-mono">
+                <span className="w-2 h-2 rounded-full bg-[#86BC24] animate-pulse" />
+                Live Rules Evaluating Engine Active
+              </span>
+              <button 
+                onClick={() => {
+                  setShowRulesEditor(false);
+                  setEditingRule(null);
+                }}
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold uppercase tracking-wider cursor-pointer font-mono"
+              >
+                Close Manager
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
-}
-
-{/* Rules Modal Overlay removed per client request */}
-function RulesModal({ show, onClose, rules }: { show: boolean, onClose: () => void, rules: any[] }) {
-  return null;
 }

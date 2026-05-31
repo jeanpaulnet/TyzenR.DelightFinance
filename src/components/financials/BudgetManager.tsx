@@ -330,41 +330,42 @@ export default function BudgetManager() {
           <p className="text-[#64748B] text-sm italic">Define and manage your income and expense categories</p>
         </div>
         
-        <div className="flex items-center gap-4 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
-          <div className="flex items-center">
-            <button 
-              onClick={() => setSelectedYear(y => y - 1)}
-              className="p-2 text-slate-400 hover:text-[#86BC24] hover:bg-slate-50 rounded-lg transition-all"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <input 
-              type="number"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value) || new Date().getFullYear())}
-              className="w-20 py-1 text-base font-bold text-slate-700 text-center bg-slate-50 rounded-lg mx-1 border border-slate-100 outline-none focus:border-[#86BC24] transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <button 
-              onClick={() => setSelectedYear(y => y + 1)}
-              className="p-2 text-slate-400 hover:text-[#86BC24] hover:bg-slate-50 rounded-lg transition-all"
-            >
-              <ChevronRight size={20} />
-            </button>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-4 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
+            <div className="flex items-center">
+              <button 
+                onClick={() => setSelectedYear(y => y - 1)}
+                className="p-2 text-slate-400 hover:text-[#86BC24] hover:bg-slate-50 rounded-lg transition-all"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <input 
+                type="number"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value) || new Date().getFullYear())}
+                className="w-20 py-1 text-base font-bold text-slate-700 text-center bg-slate-50 rounded-lg mx-1 border border-slate-100 outline-none focus:border-[#86BC24] transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button 
+                onClick={() => setSelectedYear(y => y + 1)}
+                className="p-2 text-slate-400 hover:text-[#86BC24] hover:bg-slate-50 rounded-lg transition-all"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
           </div>
-        </div>
 
-        {!isAdding && (
-          <button 
-            onClick={() => {
-              setIsAdding(true);
-              setDuplicateError(null);
-            }} 
-            className="bg-slate-900 text-white rounded-xl flex items-center gap-2 h-10 px-6 font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-md"
-          >
-            <Plus size={18} />
-            Add
-          </button>
-        )}
+          {recentYearWithData !== null && recentYearWithData !== selectedYear && (
+            <button 
+              type="button"
+              onClick={handleCopyFromRecent}
+              disabled={copying}
+              className="h-11 px-4 bg-white border border-[#86BC24] text-[#86BC24] hover:bg-[#86BC24] hover:text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              {copying ? <Loader2 size={16} className="animate-spin" /> : <Copy size={16} />}
+              Copy from {recentYearWithData}
+            </button>
+          )}
+        </div>
       </div>
 
       {isAdding && (
@@ -467,36 +468,13 @@ export default function BudgetManager() {
       )}
 
       <div className="space-y-12">
-        {categoryStats.length === 0 && !isAdding ? (
-          <div className="py-20 text-center space-y-6">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-              <Wallet size={32} />
-            </div>
-            <div>
-              <p className="text-slate-900 font-bold">No categories for {selectedYear}</p>
-              <p className="text-slate-500 text-sm">Create amounts for this year or copy from a previous period.</p>
-            </div>
-            {recentYearWithData && recentYearWithData !== selectedYear && (
-              <button 
-                onClick={handleCopyFromRecent}
-                disabled={copying}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-white border border-[#86BC24] text-[#86BC24] rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-[#86BC24] hover:text-white transition-all shadow-sm disabled:opacity-50"
-              >
-                {copying ? <Activity size={16} className="animate-spin" /> : <Copy size={16} />}
-                Copy from {recentYearWithData}
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            {[
-              { type: 'Income', label: 'Income' },
-              { type: 'Expense', label: 'Expense' },
-              { type: 'Asset', label: 'Asset' },
-              { type: 'Liability', label: 'Liability' }
-            ].map(group => {
-              const items = categoryStats.filter(s => s.data.type === group.type);
-              if (items.length === 0) return null;
+        {[
+          { type: 'Income', label: 'Income' },
+          { type: 'Expense', label: 'Expense' },
+          { type: 'Asset', label: 'Asset' },
+          { type: 'Liability', label: 'Liability' }
+        ].map(group => {
+          const items = categoryStats.filter(s => s.data.type === group.type);
               return (
                 <div key={group.type} className="space-y-4">
                   <div className="flex items-center gap-4">
@@ -702,12 +680,30 @@ export default function BudgetManager() {
                         )}
                       </div>
                     ))}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewBudget(prev => ({ ...prev, type: group.type, name: '' }));
+                        setIsAdding(true);
+                        setDuplicateError(null);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className={cn(
+                        "border border-dashed rounded-lg p-2.5 shadow-sm transition-all flex items-center justify-center gap-2 h-auto min-h-[70px] font-bold text-xs uppercase tracking-widest cursor-pointer",
+                        group.type === 'Income' ? "bg-green-50/20 border-green-200 text-green-600 hover:bg-green-50 hover:border-green-300" :
+                        group.type === 'Asset' ? "bg-blue-50/20 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300" :
+                        group.type === 'Liability' ? "bg-orange-50/20 border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300" :
+                        "bg-red-50/20 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                      )}
+                    >
+                      <Plus size={16} />
+                      Add Category
+                    </button>
                   </div>
                 </div>
               );
             })}
-          </>
-        )}
 
         <AnimatePresence>
           {deleteConfirm && (
