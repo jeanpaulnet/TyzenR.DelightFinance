@@ -35,6 +35,6 @@ jobs:
         # The local folder containing built production assets
         local-dir: ./dist/
         # The destination directory on your FTP server (defaults to root if omitted)
-        server-dir: ${{ secrets.FTP_REMOTE_PATH }}
+        server-dir: /delight.futurecaps.com
         # Setting to true helps avoid payload issues on some FTP servers
         state-name: .ftp-deploy-sync-state.json
