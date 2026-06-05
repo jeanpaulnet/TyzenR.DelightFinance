@@ -2171,6 +2171,24 @@ export default function ExpenseUpload() {
                 {editingRule ? (() => {
                   const isSaveDisabled = ruleDescKeyword.trim() === '' && ruleRefKeyword.trim() === '' && ruleFlow === 'any';
                   
+                  const ruleGeneratedName = (() => {
+                    const parts: string[] = [];
+                    if (ruleDescKeyword.trim() !== '') {
+                      const opLabel = ruleDescOperator === 'equals' ? 'equals' : 'contains';
+                      parts.push(`Desc ${opLabel} "${ruleDescKeyword.trim()}"`);
+                    }
+                    if (ruleRefKeyword.trim() !== '') {
+                      const opLabel = ruleRefOperator === 'equals' ? 'equals' : 'contains';
+                      parts.push(`Ref ${opLabel} "${ruleRefKeyword.trim()}"`);
+                    }
+                    if (ruleFlow === 'withdrawal') {
+                      parts.push('is Withdrawal');
+                    } else if (ruleFlow === 'deposit') {
+                      parts.push('is Deposit');
+                    }
+                    return parts.join(' & ') || 'Custom Filter';
+                  })();
+
                   return (
                     <form onSubmit={(e) => {
                       e.preventDefault();
@@ -2189,29 +2207,13 @@ export default function ExpenseUpload() {
                         return;
                       }
 
-                      const valName = (() => {
-                        const parts: string[] = [];
-                        if (ruleDescKeyword.trim() !== '') {
-                          parts.push(`Desc contains "${ruleDescKeyword.trim()}"`);
-                        }
-                        if (ruleRefKeyword.trim() !== '') {
-                          parts.push(`Ref contains "${ruleRefKeyword.trim()}"`);
-                        }
-                        if (ruleFlow === 'withdrawal') {
-                          parts.push('is Withdrawal');
-                        } else if (ruleFlow === 'deposit') {
-                          parts.push('is Deposit');
-                        }
-                        return parts.join(' & ') || 'Custom Filter';
-                      })();
-
                       const actions = [
                         { type: 'setCategory', value: ruleCategory }
                       ];
 
                       handleSaveRule({
                         id: editingRule.id,
-                        name: valName,
+                        name: ruleGeneratedName,
                         conditions,
                         actions
                       });
@@ -2342,6 +2344,15 @@ export default function ExpenseUpload() {
                             );
                           })}
                         </select>
+                      </div>
+
+                      {/* Generated Unique Rule Name Label */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 font-mono">Generated Rule Name (Unique & Read-only)</label>
+                        <div className="w-full px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-600 flex items-center justify-between select-all">
+                          <span>{ruleGeneratedName}</span>
+                          <span className="text-[8px] bg-slate-250 text-slate-500 font-extrabold uppercase tracking-widest px-1 py-0.5 rounded">Auto</span>
+                        </div>
                       </div>
 
                       {/* Feedback error line */}
