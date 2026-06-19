@@ -110,6 +110,8 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
                   <div className="max-h-60 overflow-y-auto">
                      {businesses.map(b => {
                         const bSettings = getBusinessSettings(b);
+                        const isCurrentActive = activeBusinessId === b.id;
+                        const itemColor = bSettings.foreColor || '#000000';
                         return (
                            <button
                               key={b.id}
@@ -121,12 +123,15 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
                                 window.location.reload();
                               }}
                               className={cn(
-                                 "w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3",
-                                 activeBusinessId === b.id ? "bg-[#86BC24]/5 font-bold" : "text-slate-600 hover:bg-slate-50"
+                                 "w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 font-medium hover:bg-slate-50"
                               )}
-                              style={{ color: activeBusinessId === b.id ? (bSettings.foreColor || '#86BC24') : undefined }}
+                              style={{ 
+                                 color: itemColor,
+                                 backgroundColor: isCurrentActive ? (itemColor.startsWith('#') ? `${itemColor}15` : 'rgba(134, 188, 36, 0.08)') : undefined,
+                                 fontWeight: isCurrentActive ? '700' : '500'
+                              }}
                            >
-                              <Building2 size={14} style={{ color: activeBusinessId === b.id ? (bSettings.foreColor || '#86BC24') : undefined }} />
+                              <Building2 size={14} style={{ color: itemColor }} />
                               {b.name}
                            </button>
                         );

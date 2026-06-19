@@ -19,7 +19,7 @@ const TIMEZONES = [
 ];
 
 export default function BusinessSettings() {
-  const { businesses, activeBusinessId, updateBusiness, deleteBusiness, setActiveTab, finData } = useApp();
+  const { businesses, activeBusinessId, updateBusiness, deleteBusiness, setActiveTab, finData, updateLocalBusinessSettings } = useApp();
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState<{
@@ -37,6 +37,14 @@ export default function BusinessSettings() {
 
   const [saveSuccess, setSaveSuccess] = useState(false);
   const activeBiz = businesses.find(b => b.id === activeBusinessId);
+
+  const handleColorChange = (newColor: string) => {
+    if (!formData) return;
+    setFormData(prev => prev ? { ...prev, foreColor: newColor } : null);
+    if (activeBiz) {
+      updateLocalBusinessSettings(activeBiz.id, { foreColor: newColor });
+    }
+  };
 
   useEffect(() => {
     if (activeBiz) {
@@ -365,46 +373,29 @@ export default function BusinessSettings() {
           <motion.div 
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm"
+            className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm"
           >
-            <div className="flex items-center gap-3 text-slate-900 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                <div 
-                  className="w-5 h-5 rounded-md border border-slate-300 transition-all duration-300"
-                  style={{ backgroundColor: formData.foreColor }}
-                />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider">Business Color</h3>
-                <p className="text-[10px] text-slate-500 font-medium tracking-wide">Dropdown Display Color</p>
-              </div>
-            </div>
-            
-            <p className="text-xs text-slate-500 leading-relaxed mb-6">
-              The color chosen will be used as the font color for this active business in the header dropdown.
-            </p>
-
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Custom Color</span>
-                <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Business Color</span>
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1">
                   <input 
                     type="color" 
                     id="business-forecolor-picker"
                     value={formData.foreColor}
-                    onChange={(e) => setFormData({ ...formData, foreColor: e.target.value })}
-                    className="w-9 h-9 rounded-lg cursor-pointer border border-slate-200 p-0 overflow-hidden"
+                    onChange={(e) => handleColorChange(e.target.value)}
+                    className="w-6 h-6 rounded cursor-pointer border border-slate-200/50 p-0 overflow-hidden shrink-0"
                   />
                   <input
                     type="text"
                     value={formData.foreColor}
-                    onChange={(e) => setFormData({ ...formData, foreColor: e.target.value })}
-                    className="w-20 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono outline-none focus:border-[#86BC24] transition-all text-center"
+                    onChange={(e) => handleColorChange(e.target.value)}
+                    className="w-16 bg-transparent border-0 rounded-none px-1 text-[11px] font-mono outline-none text-center text-slate-700 shrink-0"
                   />
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100 justify-between">
                 {[
                   { name: 'Black', hex: '#000000' },
                   { name: 'Delight Green', hex: '#86BC24' },
@@ -417,12 +408,12 @@ export default function BusinessSettings() {
                   <button
                     key={color.hex}
                     type="button"
-                    onClick={() => setFormData({ ...formData, foreColor: color.hex })}
+                    onClick={() => handleColorChange(color.hex)}
                     className={cn(
-                      "w-7 h-7 rounded-full border transition-transform relative hover:scale-110",
+                      "w-5.5 h-5.5 rounded-full border transition-transform hover:scale-110",
                       formData.foreColor.toLowerCase() === color.hex.toLowerCase() 
-                        ? "border-slate-900 scale-110 shadow-sm" 
-                        : "border-slate-200"
+                        ? "border-slate-800 scale-110 shadow-sm" 
+                        : "border-slate-100"
                     )}
                     style={{ backgroundColor: color.hex }}
                     title={color.name}

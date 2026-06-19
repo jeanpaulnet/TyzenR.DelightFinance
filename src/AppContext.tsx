@@ -74,6 +74,7 @@ interface AppContextType {
   businesses: Business[];
   activeBusinessId: string | null;
   setActiveBusinessId: (id: string | null) => void;
+  updateLocalBusinessSettings: (id: string, newSettings: Partial<BusinessSettings>) => void;
   updateBusiness: (id: string, data: Partial<Business>, options?: { skipRefresh?: boolean }) => Promise<void>;
   deleteBusiness: (id: string) => Promise<void>;
   dateFilter: DateFilter;
@@ -425,6 +426,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateLocalBusinessSettings = (id: string, newSettings: Partial<BusinessSettings>) => {
+    setBusinesses(prev => prev.map(b => {
+      if (b.id !== id) return b;
+      let currentSettings: any = {};
+      try {
+        currentSettings = b.businessSettingsJson ? JSON.parse(b.businessSettingsJson) : {};
+      } catch (e) {
+        currentSettings = {};
+      }
+      const updatedJson = JSON.stringify({
+        ...currentSettings,
+        ...newSettings,
+        foreColor: newSettings.foreColor ?? currentSettings.foreColor,
+        ForeColor: newSettings.foreColor ?? currentSettings.foreColor,
+      });
+      return {
+        ...b,
+        businessSettingsJson: updatedJson
+      };
+    }));
+  };
+
   const deleteBusiness = async (id: string) => {
     if (!user) return;
     try {
@@ -460,6 +483,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       businesses, 
       activeBusinessId, 
       setActiveBusinessId,
+      updateLocalBusinessSettings,
       updateBusiness,
       deleteBusiness,
       dateFilter,
