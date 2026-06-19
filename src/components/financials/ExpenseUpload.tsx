@@ -1546,6 +1546,84 @@ export default function ExpenseUpload() {
                             )}
                           </div>
                         </div>
+
+                        {/* Sample Column Structure Preview */}
+                        <div className="border border-slate-150 rounded-xl p-4 bg-white/60 space-y-3 shadow-xs">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-[10px] items-center gap-1.5 font-bold uppercase tracking-widest text-slate-500 font-mono flex">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#86BC24]" />
+                              Sample {importOption === 'csv' ? 'CSV' : 'Excel'} Column Structure
+                            </h4>
+                            <span className="text-[9px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
+                              {importOption === 'csv' ? 'Single Amount' : 'Dual Amount'}
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-lg border border-slate-150 bg-white">
+                            <table className="w-full text-left border-collapse text-[10px] font-mono">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-150">
+                                  {importOption === 'csv' ? (
+                                    <>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Date</th>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Category</th>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Amount</th>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Description</th>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Date</th>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Description</th>
+                                      <th className="px-2.5 py-1.5 text-[#f43f5e] font-bold whitespace-nowrap">Withdrawal</th>
+                                      <th className="px-2.5 py-1.5 text-[#10b981] font-bold whitespace-nowrap">Deposit</th>
+                                      <th className="px-2.5 py-1.5 text-slate-600 font-bold whitespace-nowrap">Category</th>
+                                    </>
+                                  )}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {importOption === 'csv' ? (
+                                  <>
+                                    <tr className="border-b border-slate-100 text-slate-500 hover:bg-slate-50/50">
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">2026-06-05</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Food & Dining</td>
+                                      <td className="px-2.5 py-1.5 font-bold text-slate-700 whitespace-nowrap">-14.50</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Bistro Lunch</td>
+                                    </tr>
+                                    <tr className="text-slate-500 hover:bg-slate-50/50">
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">2026-06-04</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Software</td>
+                                      <td className="px-2.5 py-1.5 font-bold text-slate-700 whitespace-nowrap">-29.00</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">SaaS Cloud</td>
+                                    </tr>
+                                  </>
+                                ) : (
+                                  <>
+                                    <tr className="border-b border-slate-100 text-slate-500 hover:bg-slate-50/50">
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">2026-06-05</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Payroll Direct</td>
+                                      <td className="px-2.5 py-1.5 text-slate-300">-</td>
+                                      <td className="px-2.5 py-1.5 font-bold text-[#10b981] whitespace-nowrap">+2500.00</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Income</td>
+                                    </tr>
+                                    <tr className="text-slate-500 hover:bg-slate-50/50">
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">2026-06-04</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Grocery Store</td>
+                                      <td className="px-2.5 py-1.5 font-bold text-[#f43f5e] whitespace-nowrap">85.20</td>
+                                      <td className="px-2.5 py-1.5 text-slate-300">-</td>
+                                      <td className="px-2.5 py-1.5 whitespace-nowrap">Groceries</td>
+                                    </tr>
+                                  </>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="text-[10px] text-slate-400 italic">
+                            💡 {importOption === 'csv' 
+                              ? "Smart mapping matches various header variants (e.g. 'Amt', 'Tx Date')."
+                              : "Dual column mode automatically map Debit/Withdrawal as expenses & Credit/Deposit as income."}
+                          </p>
+                        </div>
                       </div>
 
                       <div 

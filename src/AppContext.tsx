@@ -21,6 +21,7 @@ export interface BusinessSettings {
   type?: 'Personal' | 'Business';
   fiscalYearStart?: string;
   fiscalYearEnd?: string;
+  foreColor?: string;
 }
 
 export interface Business {
@@ -44,7 +45,8 @@ export function getBusinessSettings(business: Business): BusinessSettings {
       isGstEnabled: s.isGstEnabled ?? s.IsGstEnabled ?? false,
       type: s.type || s.Type || 'Personal',
       fiscalYearStart: s.fiscalYearStart || s.FiscalYearStart || '01-01',
-      fiscalYearEnd: s.fiscalYearEnd || s.FiscalYearEnd || '12-31'
+      fiscalYearEnd: s.fiscalYearEnd || s.FiscalYearEnd || '12-31',
+      foreColor: s.foreColor || s.ForeColor || '#000000'
     };
   } catch (e) {
     return {
@@ -52,7 +54,8 @@ export function getBusinessSettings(business: Business): BusinessSettings {
       timezone: 'UTC',
       isBudgetingEnabled: true,
       isGstEnabled: false,
-      type: 'Personal'
+      type: 'Personal',
+      foreColor: '#000000'
     };
   }
 }
@@ -105,6 +108,25 @@ const ADMIN_MENU_ACCESS: MenuAccess = {
   networth: true
 };
 
+const tabToPathMap: Record<string, string> = {
+  'dashboard': '/dashboard',
+  'budgets': '/categories',
+  'transactions': '/transactions',
+  'networth': '/networth',
+  'ai': '/ai',
+  'business-settings': '/business-settings'
+};
+
+const pathToTabMap: Record<string, string> = {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
+  '/categories': 'budgets',
+  '/transactions': 'transactions',
+  '/networth': 'networth',
+  '/ai': 'ai',
+  '/business-settings': 'business-settings'
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -126,8 +148,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   };
 
+  const getInitialTab = (): string => {
+    const path = window.location.pathname;
+    return pathToTabMap[path] || 'dashboard';
+  };
+
   const [dateFilter, setDateFilter] = useState<DateFilter>(getInitialDateFilter());
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>(getInitialTab());
+
+  // Sync state changes to browser URL path
+  useEffect(() => {
+    const currentPath = window.location.pathname;
+    const targetPath = tabToPathMap[activeTab] || '/dashboard';
+    
+    // Check if the path needs to be updated (treat '/' and '/dashboard' equivalence gracefully)
+    const isDashboardEquiv = (currentPath === '/' && targetPath === '/dashboard') || (currentPath === '/dashboard' && targetPath === '/dashboard');
+    
+    if (currentPath !== targetPath && !isDashboardEquiv) {
+      window.history.pushState({ tab: activeTab }, '', targetPath);
+    }
+  }, [activeTab]);
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const tab = pathToTabMap[path] || 'dashboard';
+      setActiveTab(tab);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const [finData, setFinData] = useState<AppContextType['finData']>({
     expenses: [],

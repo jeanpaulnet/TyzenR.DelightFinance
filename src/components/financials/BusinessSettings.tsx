@@ -32,6 +32,7 @@ export default function BusinessSettings() {
     isGstEnabled: boolean;
     isDefault: boolean;
     type: 'Personal' | 'Business';
+    foreColor: string;
   } | null>(null);
 
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -50,6 +51,7 @@ export default function BusinessSettings() {
         isGstEnabled: settings.isGstEnabled ?? false,
         isDefault: activeBiz.isDefault ?? false,
         type: settings.type || 'Personal',
+        foreColor: settings.foreColor || '#000000',
       });
     }
   }, [activeBiz]);
@@ -81,7 +83,8 @@ export default function BusinessSettings() {
         IsGstEnabled: sv.isGstEnabled,
         FiscalYearStart: sv.fiscalYearStart,
         FiscalYearEnd: sv.fiscalYearEnd,
-        Type: sv.type
+        Type: sv.type,
+        ForeColor: sv.foreColor
       };
 
       // If setting this as default, unset others first using full object to prevent data loss on backend
@@ -359,6 +362,76 @@ export default function BusinessSettings() {
         </div>
 
         <div className="space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm"
+          >
+            <div className="flex items-center gap-3 text-slate-900 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                <div 
+                  className="w-5 h-5 rounded-md border border-slate-300 transition-all duration-300"
+                  style={{ backgroundColor: formData.foreColor }}
+                />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider">Business Color</h3>
+                <p className="text-[10px] text-slate-500 font-medium tracking-wide">Dropdown Display Color</p>
+              </div>
+            </div>
+            
+            <p className="text-xs text-slate-500 leading-relaxed mb-6">
+              The color chosen will be used as the font color for this active business in the header dropdown.
+            </p>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">Custom Color</span>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="color" 
+                    id="business-forecolor-picker"
+                    value={formData.foreColor}
+                    onChange={(e) => setFormData({ ...formData, foreColor: e.target.value })}
+                    className="w-9 h-9 rounded-lg cursor-pointer border border-slate-200 p-0 overflow-hidden"
+                  />
+                  <input
+                    type="text"
+                    value={formData.foreColor}
+                    onChange={(e) => setFormData({ ...formData, foreColor: e.target.value })}
+                    className="w-20 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono outline-none focus:border-[#86BC24] transition-all text-center"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                {[
+                  { name: 'Black', hex: '#000000' },
+                  { name: 'Delight Green', hex: '#86BC24' },
+                  { name: 'Navy Blue', hex: '#1E3A8A' },
+                  { name: 'Emerald', hex: '#10B981' },
+                  { name: 'Amber', hex: '#F59E0B' },
+                  { name: 'Rose', hex: '#F43F5E' },
+                  { name: 'Violet', hex: '#8B5CF6' }
+                ].map((color) => (
+                  <button
+                    key={color.hex}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, foreColor: color.hex })}
+                    className={cn(
+                      "w-7 h-7 rounded-full border transition-transform relative hover:scale-110",
+                      formData.foreColor.toLowerCase() === color.hex.toLowerCase() 
+                        ? "border-slate-900 scale-110 shadow-sm" 
+                        : "border-slate-200"
+                    )}
+                    style={{ backgroundColor: color.hex }}
+                    title={color.name}
+                  />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
           <motion.div 
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}

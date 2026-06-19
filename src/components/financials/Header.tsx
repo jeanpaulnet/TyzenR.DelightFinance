@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useApp } from '../../AppContext';
+import { useApp, getBusinessSettings } from '../../AppContext';
 import { Building2, ChevronDown, Menu, PlusCircle, Settings } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -72,7 +72,8 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
            >
               <button 
                 onClick={(e) => { e.stopPropagation(); onSettingsClick(); setIsDropdownOpen(false); }}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-[#86BC24] bg-white shadow-sm hover:bg-slate-50 transition-colors shrink-0"
+                className="w-10 h-10 rounded-xl flex items-center justify-center bg-white shadow-sm hover:bg-slate-50 transition-colors shrink-0"
+                style={{ color: activeBusiness ? (getBusinessSettings(activeBusiness).foreColor || '#86BC24') : '#86BC24' }}
                 title="Business Settings"
               >
                 <Building2 size={24} />
@@ -80,7 +81,10 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
               
               <div className="flex flex-col flex-1 min-w-0">
                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Business</span>
-                 <span className="text-base font-bold text-slate-900 truncate leading-tight">
+                 <span 
+                   className="text-base font-bold truncate leading-tight transition-colors duration-300"
+                   style={{ color: activeBusiness ? (getBusinessSettings(activeBusiness).foreColor || '#0f172a') : '#0f172a' }}
+                 >
                     {activeBusiness?.name || 'Select Business'}
                  </span>
               </div>
@@ -104,23 +108,29 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
                      Your Organizations
                   </div>
                   <div className="max-h-60 overflow-y-auto">
-                     {businesses.map(b => (
-                        <button
-                           key={b.id}
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             setActiveBusinessId(b.id);
-                             setIsDropdownOpen(false);
-                           }}
-                           className={cn(
-                              "w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3",
-                              activeBusinessId === b.id ? "bg-[#86BC24]/5 text-[#86BC24] font-bold" : "text-slate-600 hover:bg-slate-50"
-                           )}
-                        >
-                           <Building2 size={14} />
-                           {b.name}
-                        </button>
-                     ))}
+                     {businesses.map(b => {
+                        const bSettings = getBusinessSettings(b);
+                        return (
+                           <button
+                              key={b.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                localStorage.setItem('activeBusinessId', b.id);
+                                setActiveBusinessId(b.id);
+                                setIsDropdownOpen(false);
+                                window.location.reload();
+                              }}
+                              className={cn(
+                                 "w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3",
+                                 activeBusinessId === b.id ? "bg-[#86BC24]/5 font-bold" : "text-slate-600 hover:bg-slate-50"
+                              )}
+                              style={{ color: activeBusinessId === b.id ? (bSettings.foreColor || '#86BC24') : undefined }}
+                           >
+                              <Building2 size={14} style={{ color: activeBusinessId === b.id ? (bSettings.foreColor || '#86BC24') : undefined }} />
+                              {b.name}
+                           </button>
+                        );
+                     })}
                   </div>
                   <div className="mt-1 pt-1 border-t border-slate-50">
                     <button

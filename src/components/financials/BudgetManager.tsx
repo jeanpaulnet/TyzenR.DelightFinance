@@ -38,6 +38,20 @@ export default function BudgetManager() {
   }, [user]);
 
   useEffect(() => {
+    if (isAdding) {
+      const timer = setTimeout(() => {
+        const mainSec = document.querySelector('section.overflow-y-auto') || document.querySelector('main section');
+        if (mainSec) {
+          mainSec.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isAdding]);
+
+  useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsAdding(false);
@@ -687,7 +701,12 @@ export default function BudgetManager() {
                         setNewBudget(prev => ({ ...prev, type: group.type, name: '' }));
                         setIsAdding(true);
                         setDuplicateError(null);
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        const mainSec = document.querySelector('section.overflow-y-auto') || document.querySelector('main section');
+                        if (mainSec) {
+                          mainSec.scrollTo({ top: 0, behavior: 'smooth' });
+                        } else {
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
                       }}
                       className={cn(
                         "border border-dashed rounded-lg p-2.5 shadow-sm transition-all flex items-center justify-center gap-2 h-auto min-h-[70px] font-bold text-xs uppercase tracking-widest cursor-pointer",

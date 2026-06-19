@@ -62,13 +62,16 @@ function MainApp() {
 
   const visibleTabs = useMemo(() => allTabs.filter(t => t.visible), [allTabs]);
 
-  // Initial landing: Redirect to first available tab once config is loaded
+  // Initial landing: Sync with current URL path first, or redirect to first available tab
   useEffect(() => {
     if (menuAccess && !hasLanded && visibleTabs.length > 0) {
-      setActiveTab(visibleTabs[0].id);
+      const isCurrentTabVisible = visibleTabs.some(t => t.id === activeTab) || activeTab === 'business-settings';
+      if (!isCurrentTabVisible) {
+        setActiveTab(visibleTabs[0].id);
+      }
       setHasLanded(true);
     }
-  }, [menuAccess, visibleTabs, hasLanded]);
+  }, [menuAccess, visibleTabs, hasLanded, activeTab, setActiveTab]);
 
   // Secondary guard: Ensure active tab remains valid if permissions shift
   useEffect(() => {
