@@ -371,6 +371,63 @@ export default function ExpenseUpload() {
       });
   }, [finData.budgets]);
 
+  // Calculate high-fidelity totals for user double-checking during bulk transaction reviews
+  const previewTotals = useMemo(() => {
+    let totalAmountAll = 0;
+    let totalAmountSelected = 0;
+
+    let totalIncomeAll = 0;
+    let totalIncomeSelected = 0;
+
+    let totalExpenseAll = 0;
+    let totalExpenseSelected = 0;
+
+    parsedData.forEach(row => {
+      const isSelected = selectedRows.has(row.id);
+
+      // Total Volume is the sum of raw transaction magnitudes
+      totalAmountAll += row.amount || 0;
+      if (isSelected) {
+        totalAmountSelected += row.amount || 0;
+      }
+
+      if (wasDualColumnAmount) {
+        const valIn = Math.abs(parseRobustFloat(row.srcIncome));
+        const valOut = Math.abs(parseRobustFloat(row.srcExpense));
+
+        totalIncomeAll += valIn;
+        totalExpenseAll += valOut;
+
+        if (isSelected) {
+          totalIncomeSelected += valIn;
+          totalExpenseSelected += valOut;
+        }
+      } else {
+        // Single column Mode
+        if (row.type === 'Income') {
+          totalIncomeAll += row.amount || 0;
+          if (isSelected) {
+            totalIncomeSelected += row.amount || 0;
+          }
+        } else {
+          totalExpenseAll += row.amount || 0;
+          if (isSelected) {
+            totalExpenseSelected += row.amount || 0;
+          }
+        }
+      }
+    });
+
+    return {
+      totalAmountAll,
+      totalAmountSelected,
+      totalIncomeAll,
+      totalIncomeSelected,
+      totalExpenseAll,
+      totalExpenseSelected
+    };
+  }, [parsedData, selectedRows, wasDualColumnAmount]);
+
   const findBestHeader = (headers: string[], keywords: string[]) => {
     return headers.find(h => {
       const lower = h.toLowerCase().trim();
@@ -378,7 +435,7 @@ export default function ExpenseUpload() {
     });
   };
 
-  const processRawRows = async (rows: any[], headers: string[]) => {
+  const processRawRows = async (rows: any[], headers: string[], aiMappings?: any) => {
     setIsProcessing(true);
     setFeedback({ type: 'success', message: 'Identifying columns with AI...' });
     
@@ -392,27 +449,40 @@ export default function ExpenseUpload() {
       let incomeHeader: string | undefined = undefined;
       let expenseHeader: string | undefined = undefined;
 
-      try {
-        const sampleRows = rows.slice(0, 4).map(rowObj => {
-          return headers.map(h => rowObj[h] !== undefined && rowObj[h] !== null ? String(rowObj[h]) : '');
-        });
+      if (aiMappings) {
+        const mapping = aiMappings;
+        if (mapping.date) dateHeader = headers.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim());
+        if (mapping.description) descHeader = headers.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim());
+        if (mapping.category) catHeader = headers.find(h => h === mapping.category || h.toLowerCase().trim() === mapping.category.toLowerCase().trim());
+        if (mapping.amount) amountHeader = headers.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim());
+        if (mapping.reference) notesHeader = headers.find(h => h === mapping.reference || h.toLowerCase().trim() === mapping.reference.toLowerCase().trim());
+        if (!notesHeader && mapping.notes) notesHeader = headers.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim());
+        
+        if (mapping.withdrawal) expenseHeader = headers.find(h => h === mapping.withdrawal || h.toLowerCase().trim() === mapping.withdrawal.toLowerCase().trim());
+        if (mapping.deposit) incomeHeader = headers.find(h => h === mapping.deposit || h.toLowerCase().trim() === mapping.deposit.toLowerCase().trim());
+      } else {
+        try {
+          const sampleRows = rows.slice(0, 4).map(rowObj => {
+            return headers.map(h => rowObj[h] !== undefined && rowObj[h] !== null ? String(rowObj[h]) : '');
+          });
 
-        const mappingRes = await fetch('/api/delight/mapping', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ headers, sampleRows })
-        });
+          const mappingRes = await fetch('/api/delight/mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ headers, sampleRows })
+          });
 
-        if (mappingRes.ok) {
-          const mapping = await mappingRes.json();
-          if (mapping.date) dateHeader = headers.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim());
-          if (mapping.description) descHeader = headers.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim());
-          if (mapping.category) catHeader = headers.find(h => h === mapping.category || h.toLowerCase().trim() === mapping.category.toLowerCase().trim());
-          if (mapping.amount) amountHeader = headers.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim());
-          if (mapping.notes) notesHeader = headers.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim());
+          if (mappingRes.ok) {
+            const mapping = await mappingRes.json();
+            if (mapping.date) dateHeader = headers.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim());
+            if (mapping.description) descHeader = headers.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim());
+            if (mapping.category) catHeader = headers.find(h => h === mapping.category || h.toLowerCase().trim() === mapping.category.toLowerCase().trim());
+            if (mapping.amount) amountHeader = headers.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim());
+            if (mapping.notes) notesHeader = headers.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim());
+          }
+        } catch (aiErr) {
+          console.warn("AI Mapping failed, using keyword fallback", aiErr);
         }
-      } catch (aiErr) {
-        console.warn("AI Mapping failed, using keyword fallback", aiErr);
       }
 
       // Keyword heuristic fallback for unmapped fields
@@ -548,7 +618,7 @@ export default function ExpenseUpload() {
 
         const finalNotes = notesParts.join(" | ");
         
-        let category = rawCategory;
+        let category = '';
         let matchedByRule = false;
 
         // Apply rules
@@ -592,8 +662,16 @@ export default function ExpenseUpload() {
           }
         }
 
-        if (!matchedByRule && !category) {
-          category = type; 
+        if (!matchedByRule) {
+          // If no rules matched, check if rawCategory is a valid existing category
+          const catLower = rawCategory.toLowerCase().trim();
+          const exists = finData.budgets.some(b => b.name?.toLowerCase().trim() === catLower);
+          if (rawCategory && exists) {
+            category = rawCategory;
+          } else {
+            // Categorize as "Income" if deposit & "Expense" if withdrawal
+            category = type === 'Income' ? 'Income' : 'Expense';
+          }
         }
 
         const detectedType = categoryTypeMap.get((category || '').toLowerCase()) || type;
@@ -879,7 +957,34 @@ export default function ExpenseUpload() {
       throw new Error('No data found in the file.');
     }
 
-    const headerIdx = findHeaderRowIndex(allRows);
+    let headerIdx = 0;
+    let columnMappings: any = null;
+    let dataRowIndices: number[] = [];
+    let usedAi = false;
+
+    try {
+      setFeedback({ type: 'success', message: 'Identifying columns and rows with AI...' });
+      const response = await fetch('/api/delight/bank-statement-mapping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allRows: allRows.slice(0, 60) })
+      });
+
+      if (response.ok) {
+        const aiResult = await response.json();
+        headerIdx = aiResult.headerRowIndex;
+        columnMappings = aiResult.columnMappings;
+        dataRowIndices = aiResult.dataRowIndices;
+        usedAi = true;
+      }
+    } catch (aiErr) {
+      console.warn("AI Bank Statement Mapping failed, falling back to heuristic", aiErr);
+    }
+
+    if (!usedAi) {
+      headerIdx = findHeaderRowIndex(allRows);
+    }
+
     const headersRow = allRows[headerIdx] || [];
     
     // Assign unique column names to empty or duplicate columns
@@ -900,8 +1005,18 @@ export default function ExpenseUpload() {
       throw new Error('Could not automatically determine column headers in the file.');
     }
 
-    const dataRows = allRows.slice(headerIdx + 1);
-    const jsonData = dataRows.map(r => {
+    // Filter and construct rows from spreadsheet data
+    const jsonData = allRows.map((r, rowIndex) => {
+      if (rowIndex <= headerIdx) return null;
+
+      if (usedAi && rowIndex < 60) {
+        if (!dataRowIndices.includes(rowIndex)) return null;
+      }
+
+      // Filter out completely blank rows
+      const hasContent = r.some(c => c !== undefined && c !== null && String(c).trim() !== "");
+      if (!hasContent) return null;
+
       const obj: Record<string, any> = {};
       headers.forEach((h, colIdx) => {
         if (h) {
@@ -909,16 +1024,13 @@ export default function ExpenseUpload() {
         }
       });
       return obj;
-    }).filter(obj => {
-      // Filter out completely blank or empty row objects
-      return Object.values(obj).some(val => val !== undefined && val !== null && String(val).trim() !== "");
-    });
+    }).filter(Boolean) as Record<string, any>[];
 
     if (jsonData.length === 0) {
       throw new Error('No transaction rows were parsed. Ensure rows under the headers have transactions.');
     }
 
-    await processRawRows(jsonData, headers.filter(Boolean));
+    await processRawRows(jsonData, headers.filter(Boolean), usedAi ? columnMappings : undefined);
   };
 
   const parseExcel = (file: File) => {
@@ -1471,7 +1583,7 @@ export default function ExpenseUpload() {
                           <Table size={18} />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-900 font-sans tracking-tight">Bank Excel Import</p>
+                          <p className="text-sm font-bold text-slate-900 font-sans tracking-tight">Bank Statement Import</p>
                           <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Import bank statements with separate Withdrawal & Deposit columns.</p>
                         </div>
                       </button>
@@ -1532,7 +1644,7 @@ export default function ExpenseUpload() {
                                   className="text-[10px] font-bold uppercase tracking-widest text-[#86BC24] hover:underline flex items-center gap-2"
                                 >
                                   <Table size={12} />
-                                  Download Bank Excel Template
+                                  Download Bank Statement Template
                                 </button>
                                 <button
                                   type="button"
@@ -1801,28 +1913,34 @@ export default function ExpenseUpload() {
                                     </div>
                                   ) : (
                                     <div className="relative w-full max-w-[280px]">
-                                      <select 
-                                        value={targetVal}
-                                        onChange={(e) => setResolutions(prev => ({ ...prev, [name]: { type: 'map', target: e.target.value } }))}
-                                        className={cn(
-                                          "w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-bold outline-none appearance-none pr-8",
-                                          targetVal ? "border-[#86BC24] text-[#86BC24]" : "border-slate-200 text-slate-500"
-                                        )}
-                                      >
-                                        <option value="">Choose matching budget...</option>
-                                        {incomeExpenseBudgets.map(b => {
-                                          const isInc = (b.type || '').toLowerCase() === 'income';
-                                          return (
-                                            <option 
-                                              key={b.id} 
-                                              value={b.category || b.name}
-                                              style={{ color: isInc ? '#10b981' : '#f43f5e' }}
-                                            >
-                                              {isInc ? '🟢' : '🔴'} {b.category || b.name} ({b.type || 'Expense'})
-                                            </option>
-                                          );
-                                        })}
-                                      </select>
+                                      {(() => {
+                                        const resolvedType = (incomeExpenseBudgets.find(b => (b.category || b.name) === targetVal)?.type || 'Expense').toLowerCase();
+                                        const isInc = resolvedType === 'income';
+                                        return (
+                                          <select 
+                                            value={targetVal}
+                                            onChange={(e) => setResolutions(prev => ({ ...prev, [name]: { type: 'map', target: e.target.value } }))}
+                                            className={cn(
+                                              "w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-bold outline-none appearance-none pr-8 transition-all",
+                                              targetVal ? (isInc ? "border-green-300 text-green-700 bg-green-50/20" : "border-red-300 text-red-700 bg-red-50/20") : "border-slate-200 text-slate-500"
+                                            )}
+                                          >
+                                            <option value="">Choose matching budget...</option>
+                                            {incomeExpenseBudgets.map(b => {
+                                              const bIsInc = (b.type || '').toLowerCase() === 'income';
+                                              return (
+                                                <option 
+                                                  key={b.id} 
+                                                  value={b.category || b.name}
+                                                  style={{ color: bIsInc ? '#10b981' : '#f43f5e' }}
+                                                >
+                                                  {bIsInc ? '🟢' : '🔴'} {b.category || b.name} ({b.type || 'Expense'})
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        );
+                                      })()}
                                       <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                         <ArrowDown size={10} />
                                       </div>
@@ -1878,6 +1996,87 @@ export default function ExpenseUpload() {
                           <RefreshCw size={14} />
                           Apply Rules
                         </button>
+                      </div>
+                    </div>
+
+                    {/* Pre-import Preview Totals Summary Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-gradient-to-br from-slate-50 to-white border border-slate-150 p-5 rounded-2xl shadow-sm">
+                      <div className="space-y-2 p-4 bg-slate-50/55 rounded-xl border border-slate-100/80 hover:shadow-sm transition-all duration-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Gross Transaction Volume</p>
+                          </div>
+                          <span className="text-[8px] bg-indigo-50 border border-indigo-100/50 text-indigo-600 px-1.5 py-0.5 rounded-md font-black uppercase">Vol</span>
+                        </div>
+                        <div className="flex items-end justify-between pt-1">
+                          <div>
+                            <p className="text-xl font-black text-slate-800 leading-none">
+                              {formatCurrency(previewTotals.totalAmountSelected, currencyCode)}
+                            </p>
+                            <p className="text-[9px] text-slate-400 font-bold mt-1">
+                              Selected ({selectedRows.size} of {parsedData.length} rows)
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-slate-500 font-mono">
+                              {formatCurrency(previewTotals.totalAmountAll, currencyCode)}
+                            </p>
+                            <p className="text-[9px] text-slate-400 font-bold">Total in File</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 p-4 bg-emerald-50/15 rounded-xl border border-emerald-100/30 hover:shadow-sm transition-all duration-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Total Deposits / Income</p>
+                          </div>
+                          <span className="text-[8px] bg-emerald-50 border border-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md font-black uppercase">Inflow</span>
+                        </div>
+                        <div className="flex items-end justify-between pt-1">
+                          <div>
+                            <p className="text-xl font-black text-emerald-800 leading-none">
+                              {formatCurrency(previewTotals.totalIncomeSelected, currencyCode)}
+                            </p>
+                            <p className="text-[9px] text-emerald-600/80 font-bold mt-1">
+                              Selected
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-emerald-600 font-mono/80">
+                              {formatCurrency(previewTotals.totalIncomeAll, currencyCode)}
+                            </p>
+                            <p className="text-[9px] text-emerald-400 font-bold">Total in File</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 p-4 bg-rose-50/15 rounded-xl border border-rose-100/30 hover:shadow-sm transition-all duration-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Total Withdrawals / Expenses</p>
+                          </div>
+                          <span className="text-[8px] bg-rose-50 border border-rose-100 text-rose-700 px-1.5 py-0.5 rounded-md font-black uppercase">Outflow</span>
+                        </div>
+                        <div className="flex items-end justify-between pt-1">
+                          <div>
+                            <p className="text-xl font-black text-rose-800 leading-none">
+                              {formatCurrency(previewTotals.totalExpenseSelected, currencyCode)}
+                            </p>
+                            <p className="text-[9px] text-rose-600/80 font-bold mt-1">
+                              Selected
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-rose-600 font-mono/80">
+                              {formatCurrency(previewTotals.totalExpenseAll, currencyCode)}
+                            </p>
+                            <p className="text-[9px] text-rose-400 font-bold">Total in File</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                      <div className="overflow-x-scroll border border-slate-100 rounded-xl shadow-sm">
@@ -1952,7 +2151,7 @@ export default function ExpenseUpload() {
                                            row.type === 'Income' ? "text-green-700 border-green-200 bg-green-50/30" : 
                                            row.type === 'Asset' ? "text-blue-700 border-blue-200 bg-blue-50/30" : 
                                            row.type === 'Liability' ? "text-amber-700 border-amber-200 bg-amber-50/30" : 
-                                           "text-slate-700 border-slate-200"
+                                           "text-red-700 border-red-200 bg-red-50/30"
                                          ),
                                          "focus:border-[#86BC24]"
                                        )}
@@ -2007,6 +2206,37 @@ export default function ExpenseUpload() {
                               </tr>
                             ))}
                          </tbody>
+                         <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800 text-xs shadow-[0_-2px_6px_rgba(0,0,0,0.02)] sticky bottom-0">
+                           <tr>
+                             <td className="px-4 py-3.5"></td>
+                             <td className="px-4 py-3.5"></td>
+                             <td className="px-4 py-3.5">
+                               <div className="leading-tight">
+                                 <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">selected / total in file</p>
+                                 <p className="text-[9px] text-slate-400 font-bold">({selectedRows.size} of {parsedData.length} rows)</p>
+                               </div>
+                             </td>
+                             <td className="px-4 py-3.5"></td>
+                             <td className="px-4 py-3.5"></td>
+                             {wasDualColumnAmount && (
+                               <>
+                                 <td className="px-4 py-3.5 text-right font-bold text-emerald-700 font-mono whitespace-nowrap bg-emerald-50/10">
+                                   <div>{formatCurrency(previewTotals.totalIncomeSelected, currencyCode)}</div>
+                                   <div className="text-[8px] text-slate-400 font-bold mt-0.5">File: {formatCurrency(previewTotals.totalIncomeAll, currencyCode)}</div>
+                                 </td>
+                                 <td className="px-4 py-3.5 text-right font-bold text-rose-700 font-mono whitespace-nowrap bg-rose-50/10">
+                                   <div>{formatCurrency(previewTotals.totalExpenseSelected, currencyCode)}</div>
+                                   <div className="text-[8px] text-slate-400 font-bold mt-0.5">File: {formatCurrency(previewTotals.totalExpenseAll, currencyCode)}</div>
+                                 </td>
+                               </>
+                             )}
+                             <td className="px-4 py-3.5 text-right font-bold text-indigo-700 font-mono whitespace-nowrap bg-indigo-50/10">
+                               <div>{formatCurrency(previewTotals.totalAmountSelected, currencyCode)}</div>
+                               <div className="text-[8px] text-slate-400 font-bold mt-0.5">File: {formatCurrency(previewTotals.totalAmountAll, currencyCode)}</div>
+                             </td>
+                             <td className="px-2 py-3.5"></td>
+                           </tr>
+                         </tfoot>
                        </table>
                      </div>
                   </div>

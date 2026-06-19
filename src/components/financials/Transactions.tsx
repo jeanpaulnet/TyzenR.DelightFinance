@@ -628,7 +628,7 @@ export default function Transactions() {
                  <select 
                    required value={formData.categoryId}
                    onChange={e => handleCategoryChange(e.target.value)}
-                   className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-colors text-sm"
+                   className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-colors text-sm font-bold" style={{ color: (() => { const selectedCat = finData.budgets.find(b => b.id === formData.categoryId); const isIncome = selectedCat && (selectedCat.type || '').toLowerCase() === 'income'; return formData.categoryId ? (isIncome ? '#16A34A' : '#DC2626') : undefined; })() }}
                  >
                   <option value="" className="text-slate-900">Select Category</option>
                   {incomeExpenseBudgets.map(cat => {
@@ -1000,7 +1000,7 @@ export default function Transactions() {
                   <select 
                     required value={formData.categoryId}
                     onChange={e => handleCategoryChange(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all cursor-pointer font-bold" style={{ color: (() => { const selectedCat = finData.budgets.find(b => b.id === formData.categoryId); const isIncome = selectedCat && (selectedCat.type || '').toLowerCase() === 'income'; return formData.categoryId ? (isIncome ? '#16A34A' : '#DC2626') : undefined; })() }}
                   >
                     <option value="">Select Category</option>
                     {incomeExpenseBudgets.map(cat => {
@@ -1009,7 +1009,7 @@ export default function Transactions() {
                         <option 
                           key={cat.id} 
                           value={cat.id}
-                          style={{ color: type.toLowerCase() === 'income' ? '#10b981' : '#f43f5e' }}
+                          style={{ color: type.toLowerCase() === 'income' ? '#16A34A' : '#DC2626' }}
                           className={type.toLowerCase() === 'income' ? "text-emerald-600 font-medium bg-white" : "text-rose-600 font-medium bg-white"}
                         >
                           {cat.name || cat.category} ({type})

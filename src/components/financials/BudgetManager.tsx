@@ -405,11 +405,18 @@ export default function BudgetManager() {
               value={newBudget.type} 
               onChange={e => setNewBudget({...newBudget, type: e.target.value})}
               className="w-full p-2.5 bg-white border border-[#E2E8F0] rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm font-bold"
+              style={{
+                color:
+                  newBudget.type === 'Income' ? '#16A34A' :
+                  newBudget.type === 'Asset' ? '#2563EB' :
+                  newBudget.type === 'Liability' ? '#D97706' :
+                  '#DC2626'
+              }}
             >
-              <option value="Income">Income</option>
-              <option value="Expense">Expense</option>
-              <option value="Asset">Asset</option>
-              <option value="Liability">Liability</option>
+              <option value="Income" style={{ color: '#16A34A' }}>Income</option>
+              <option value="Expense" style={{ color: '#DC2626' }}>Expense</option>
+              <option value="Asset" style={{ color: '#2563EB' }}>Asset</option>
+              <option value="Liability" style={{ color: '#D97706' }}>Liability</option>
             </select>
           </div>
           {newBudget.type !== 'Income' && (

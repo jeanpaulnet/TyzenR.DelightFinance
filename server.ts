@@ -66,6 +66,15 @@ async function startServer() {
 
   app.post("/api/delight/business", (req, res) => {
     const id = req.body.id || req.body.Id;
+    
+    // Normalize Settings/settings into businessSettingsJson/BusinessSettingsJson on backend
+    const settingsObj = req.body.Settings || req.body.settings || req.body.SettingsObj;
+    if (settingsObj) {
+      const jsonStr = JSON.stringify(settingsObj);
+      req.body.businessSettingsJson = jsonStr;
+      req.body.BusinessSettingsJson = jsonStr;
+    }
+
     if (id) {
        const index = MOCK_DATA.businesses.findIndex(b => b.id === id);
        if (index >= 0) {
@@ -312,6 +321,102 @@ Instructions:
     } catch (err: any) {
       console.error("Column mapping API error:", err);
       res.status(500).json({ error: err.message || "Failed to identify columns with AI." });
+    }
+  });
+
+  // AI-powered bank statement rows and column mapper
+  app.post("/api/delight/bank-statement-mapping", async (req, res) => {
+    try {
+      const { allRows } = req.body;
+      if (!allRows || !allRows.length) {
+        return res.status(400).json({ error: "Missing bank statement rows in request." });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Gemini API key is missing on the server." });
+      }
+
+      const aiClient = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const prompt = `You are a financial parsing expert database system.
+Analyze the following list of rows representing the start of a bank statement spreadsheet file as a 2D array [[cell0, cell1, ...], [cell0, cell1, ...], ...].
+
+Your task is to:
+1. Identify the 'headerRowIndex': the 0-based index of the row inside the inputs array that contains the main column headers (like Date, Description, Amount, Category, Reference, Memo).
+2. Map these standard transaction fields to the single EXACT header string from that identified header row:
+   - "date": the column header for Transaction Date
+   - "description": the column header for transaction Description / Payee / Vendor
+   - "category": the column header for Category (if any)
+   - "reference": column header for Reference / Memo / Notes / Check No (if any)
+   - "amount": column header for single amount column
+   - "withdrawal": column header for separate withdrawal, debit, or out-flow amount (if dual column format)
+   - "deposit": column header for separate deposit, credit, or in-flow amount (if dual column format)
+3. Identify 'dataRowIndices': an array of 0-based indices pointing to input rows that are actual individual transaction records.
+   - Do NOT include the header row itself.
+   - Do NOT include empty/blank rows.
+   - Do NOT include section titles, running balances, subheaders, or total summaries at the bottom of the statement.
+   - Include only valid row indices that contain transaction record cells.
+
+Input spreadsheet rows:
+${JSON.stringify(allRows.slice(0, 60))}
+`;
+
+      const response = await aiClient.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          systemInstruction: "You are an intelligent data schema identification service that returns exact column mappings and transaction data row indices as JSON.",
+          temperature: 0.1,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              headerRowIndex: { 
+                type: Type.INTEGER, 
+                description: "The 0-based index of the row inside the inputs array that contains the column headers." 
+              },
+              columnMappings: {
+                type: Type.OBJECT,
+                properties: {
+                  date: { type: Type.STRING, description: "exact spreadsheet header string matching Date" },
+                  description: { type: Type.STRING, description: "exact spreadsheet header string matching Description / Payee" },
+                  category: { type: Type.STRING, description: "exact spreadsheet header string matching Category (empty string if none)" },
+                  reference: { type: Type.STRING, description: "exact spreadsheet header string matching Reference / Memo / Notes (empty string if none)" },
+                  amount: { type: Type.STRING, description: "exact spreadsheet header string matching single Amount column (empty string if none)" },
+                  withdrawal: { type: Type.STRING, description: "exact spreadsheet header string matching Withdrawal / Debit (empty string if none)" },
+                  deposit: { type: Type.STRING, description: "exact spreadsheet header string matching Deposit / Credit (empty string if none)" },
+                },
+                required: ["date", "description"]
+              },
+              dataRowIndices: {
+                type: Type.ARRAY,
+                items: { type: Type.INTEGER },
+                description: "the 0-based indices in the rows array that contain actual transaction data rows."
+              }
+            },
+            required: ["headerRowIndex", "columnMappings", "dataRowIndices"]
+          }
+        }
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("No response from Gemini API");
+      }
+
+      const result = JSON.parse(text);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Bank statement mapping API error:", err);
+      res.status(500).json({ error: err.message || "Failed to analyze bank statement with AI." });
     }
   });
 

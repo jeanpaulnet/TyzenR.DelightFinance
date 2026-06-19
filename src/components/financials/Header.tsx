@@ -111,7 +111,7 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
                      {businesses.map(b => {
                         const bSettings = getBusinessSettings(b);
                         const isCurrentActive = activeBusinessId === b.id;
-                        const itemColor = bSettings.foreColor || '#000000';
+                        const itemColor = bSettings.foreColor || '#0f172a';
                         return (
                            <button
                               key={b.id}
@@ -120,7 +120,7 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
                                 localStorage.setItem('activeBusinessId', b.id);
                                 setActiveBusinessId(b.id);
                                 setIsDropdownOpen(false);
-                                window.location.reload();
+                                
                               }}
                               className={cn(
                                  "w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 font-medium hover:bg-slate-50"

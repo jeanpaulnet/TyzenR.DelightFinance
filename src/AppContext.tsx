@@ -36,8 +36,42 @@ export interface Business {
 }
 
 export function getBusinessSettings(business: Business): BusinessSettings {
+  if (!business) {
+    return {
+      currency: 'USD',
+      timezone: 'UTC',
+      isBudgetingEnabled: true,
+      isGstEnabled: false,
+      type: 'Personal',
+      foreColor: '#0f172a'
+    };
+  }
   try {
-    const s = JSON.parse(business.businessSettingsJson);
+    let s: any = null;
+    const rawSettings = business.businessSettingsJson;
+    if (rawSettings) {
+      if (typeof rawSettings === 'string') {
+        s = JSON.parse(rawSettings);
+      } else {
+        s = rawSettings;
+      }
+    } else if ((business as any).Settings) {
+      s = (business as any).Settings;
+    } else if ((business as any).settings) {
+      s = (business as any).settings;
+    }
+
+    if (!s) {
+      return {
+        currency: 'USD',
+        timezone: 'UTC',
+        isBudgetingEnabled: true,
+        isGstEnabled: false,
+        type: 'Personal',
+        foreColor: '#0f172a'
+      };
+    }
+
     return {
       currency: s.currency || s.Currency || 'USD',
       timezone: s.timezone || s.Timezone || 'UTC',
@@ -46,7 +80,7 @@ export function getBusinessSettings(business: Business): BusinessSettings {
       type: s.type || s.Type || 'Personal',
       fiscalYearStart: s.fiscalYearStart || s.FiscalYearStart || '01-01',
       fiscalYearEnd: s.fiscalYearEnd || s.FiscalYearEnd || '12-31',
-      foreColor: s.foreColor || s.ForeColor || '#000000'
+      foreColor: s.foreColor || s.ForeColor || '#0f172a'
     };
   } catch (e) {
     return {
@@ -55,7 +89,7 @@ export function getBusinessSettings(business: Business): BusinessSettings {
       isBudgetingEnabled: true,
       isGstEnabled: false,
       type: 'Personal',
-      foreColor: '#000000'
+      foreColor: '#0f172a'
     };
   }
 }
@@ -194,15 +228,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const businessesRes = await businessApi.list().catch(() => ({ data: [] }));
       const rawBizs = (businessesRes.data || []) as any[];
-      const currentBusinesses = rawBizs.map(b => ({
-        id: b.id || b.Id,
-        name: b.name || b.Name,
-        isDefault: b.isDefault || b.IsDefault,
-        businessSettingsJson: b.businessSettingsJson || b.BusinessSettingsJson,
-        userId: b.userId || b.UserId,
-        createdAt: b.createdAt || b.CreatedAt,
-        updatedAt: b.updatedAt || b.UpdatedAt
-      }));
+      const currentBusinesses = rawBizs.map(b => {
+        let settingsJson = b.businessSettingsJson || b.BusinessSettingsJson;
+        if (!settingsJson && (b.Settings || b.settings)) {
+          settingsJson = typeof (b.Settings || b.settings) === 'string'
+            ? (b.Settings || b.settings)
+            : JSON.stringify(b.Settings || b.settings);
+        }
+        return {
+          id: b.id || b.Id,
+          name: b.name || b.Name,
+          isDefault: b.isDefault || b.IsDefault,
+          businessSettingsJson: settingsJson || '',
+          userId: b.userId || b.UserId,
+          createdAt: b.createdAt || b.CreatedAt,
+          updatedAt: b.updatedAt || b.UpdatedAt
+        };
+      });
       setBusinesses(currentBusinesses);
       return currentBusinesses;
     } catch (err) {
@@ -285,6 +327,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (loading) return;
+
     if (!user) {
       setFinData({ expenses: [], budgets: [], accounts: [], investments: [], rules: [] });
       setUserRole(null);
@@ -348,15 +392,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const res = await businessApi.list();
         const rawBizs = (res.data || []) as any[];
-        const bizs = rawBizs.map(b => ({
-          id: b.id || b.Id,
-          name: b.name || b.Name,
-          isDefault: b.isDefault || b.IsDefault,
-          businessSettingsJson: b.businessSettingsJson || b.BusinessSettingsJson,
-          userId: b.userId || b.UserId,
-          createdAt: b.createdAt || b.CreatedAt,
-          updatedAt: b.updatedAt || b.UpdatedAt
-        }));
+        const bizs = rawBizs.map(b => {
+          let settingsJson = b.businessSettingsJson || b.BusinessSettingsJson;
+          if (!settingsJson && (b.Settings || b.settings)) {
+            settingsJson = typeof (b.Settings || b.settings) === 'string'
+              ? (b.Settings || b.settings)
+              : JSON.stringify(b.Settings || b.settings);
+          }
+          return {
+            id: b.id || b.Id,
+            name: b.name || b.Name,
+            isDefault: b.isDefault || b.IsDefault,
+            businessSettingsJson: settingsJson || '',
+            userId: b.userId || b.UserId,
+            createdAt: b.createdAt || b.CreatedAt,
+            updatedAt: b.updatedAt || b.UpdatedAt
+          };
+        });
         setBusinesses(bizs);
         
         if (bizs.length > 0) {
@@ -376,7 +428,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fetchBusinesses();
 
     return () => {};
-  }, [user]);
+  }, [user, loading]);
 
   useEffect(() => {
     if (!user || !activeBusinessId) {

@@ -59,7 +59,7 @@ export default function BusinessSettings() {
         isGstEnabled: settings.isGstEnabled ?? false,
         isDefault: activeBiz.isDefault ?? false,
         type: settings.type || 'Personal',
-        foreColor: settings.foreColor || '#000000',
+        foreColor: settings.foreColor || '#0f172a',
       });
     }
   }, [activeBiz]);
@@ -398,6 +398,7 @@ export default function BusinessSettings() {
               <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100 justify-between">
                 {[
                   { name: 'Black', hex: '#000000' },
+                  { name: 'Charcoal Slate', hex: '#0f172a' },
                   { name: 'Delight Green', hex: '#86BC24' },
                   { name: 'Navy Blue', hex: '#1E3A8A' },
                   { name: 'Emerald', hex: '#10B981' },
