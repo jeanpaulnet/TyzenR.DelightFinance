@@ -15,6 +15,8 @@ namespace DelightFinance.Controllers
         public string? FiscalYearStart { get; set; } = "01-01";
         public string? FiscalYearEnd { get; set; } = "12-31";
         public string? Type { get; set; } = "Personal";
+        public string ForeColor { get; set; } = "#0f172a";
+        public string foreColor { get => ForeColor; set => ForeColor = value; }
     }
 
     // --- Core Entities ---
@@ -86,6 +88,8 @@ namespace DelightFinance.Controllers
         public string? FiscalYearStart { get; set; } = "01-01";
         public string? FiscalYearEnd { get; set; } = "12-31";
         public string? Type { get; set; } = "Personal";
+        public string ForeColor { get; set; } = "#0f172a";
+        public string foreColor { get => ForeColor; set => ForeColor = value; }
     }
 
     public class SaveBusinessDto

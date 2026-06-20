@@ -38,7 +38,20 @@ export default function AIChat() {
           page: 1,
           pageSize: 1000
         });
-        setLocalExpenses(res.data.items || []);
+        const rawItems = res.data.items || res.data.Items || [];
+        const mappedItems = rawItems.map((e: any) => ({
+          ...e,
+          id: e.id || e.Id,
+          date: e.date || e.Date || '',
+          amount: e.amount !== undefined ? e.amount : (e.Amount !== undefined ? e.Amount : 0),
+          deductions: e.deductions !== undefined ? e.deductions : (e.Deductions !== undefined ? e.Deductions : 0),
+          finalAmount: e.finalAmount !== undefined ? e.finalAmount : (e.FinalAmount !== undefined ? e.FinalAmount : 0),
+          categoryId: e.categoryId || e.CategoryId || '',
+          description: e.description || e.Description || 'No Description',
+          notes: e.notes || e.Notes || e.reference || e.Reference || '',
+          reference: e.reference || e.Reference || e.notes || e.Notes || ''
+        }));
+        setLocalExpenses(mappedItems);
       } catch (err) {
         console.error("Error fetching context for AI:", err);
       }

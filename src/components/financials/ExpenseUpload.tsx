@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { useApp, getBusinessSettings } from '../../AppContext';
-import { collection, addDoc, query, where, onSnapshot, doc, deleteDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { logEvent } from '../../lib/audit';
 import { 
@@ -21,6 +21,11 @@ import {
   Loader2,
   RefreshCw,
   Settings2,
+  Trash2,
+  Plus,
+  Search,
+  Check,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, formatCurrency } from '../../lib/utils';
@@ -266,8 +271,30 @@ export default function ExpenseUpload() {
   const currencyCode = settings?.currency || 'USD';
   
   const [isOpen, setIsOpen] = useState(false);
-  const [step, setStep] = useState<'upload' | 'create-categories' | 'resolve' | 'preview'>('upload');
+  const [step, setStep] = useState<'upload' | 'mapping' | 'create-categories' | 'resolve' | 'preview'>('upload');
   const [isSaving, setIsSaving] = useState(false);
+
+  // V2 Specific States
+  const [isOpenV2, setIsOpenV2] = useState(false);
+  const [v2Step, setV2Step] = useState<'upload' | 'processing' | 'rules' | 'preview'>('upload');
+  const [v2ParsedData, setV2ParsedData] = useState<ParsedTransaction[]>([]);
+  const [v2RawRows, setV2RawRows] = useState<any[][]>([]);
+  const [v2HeaderRowIndex, setV2HeaderRowIndex] = useState<number>(-1);
+  const [showV2PreviewDialog, setShowV2PreviewDialog] = useState(false);
+  const [v2Filename, setV2Filename] = useState('');
+  const [v2Feedback, setV2Feedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [v2SearchTerm, setV2SearchTerm] = useState('');
+  const v2FileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Rule Maker in V2
+  const [v2NewRuleField, setV2NewRuleField] = useState<'description' | 'reference'>('description');
+  const [v2NewRuleValue, setV2NewRuleValue] = useState('');
+  const [v2NewRuleCategory, setV2NewRuleCategory] = useState('');
+  const [v2NewRuleFlow, setV2NewRuleFlow] = useState<'any' | 'withdrawal' | 'deposit'>('any');
+  const [editingRuleV2Id, setEditingRuleV2Id] = useState<string | null>(null);
+
+  // Multi-selection set in V2
+  const [v2SelectedRows, setV2SelectedRows] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCreatingCategories, setIsCreatingCategories] = useState(false);
   const [wasDualColumnAmount, setWasDualColumnAmount] = useState(false);
@@ -280,6 +307,17 @@ export default function ExpenseUpload() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Column Mapping states
+  const [rawParsedRows, setRawParsedRows] = useState<any[]>([]);
+  const [availableHeaders, setAvailableHeaders] = useState<string[]>([]);
+  const [mappedDateCol, setMappedDateCol] = useState<string>('');
+  const [mappedDescCol, setMappedDescCol] = useState<string>('');
+  const [mappedRefCol, setMappedRefCol] = useState<string>('');
+  const [amountMappingType, setAmountMappingType] = useState<'single' | 'dual'>('single');
+  const [mappedAmountCol, setMappedAmountCol] = useState<string>('');
+  const [mappedWithdrawalCol, setMappedWithdrawalCol] = useState<string>('');
+  const [mappedDepositCol, setMappedDepositCol] = useState<string>('');
 
   // Import options state (Standard CSV vs Bank Statement Excel with WD split)
   const [importOption, setImportOption] = useState<'csv' | 'bank_excel'>('csv');
@@ -437,7 +475,11 @@ export default function ExpenseUpload() {
 
   const processRawRows = async (rows: any[], headers: string[], aiMappings?: any) => {
     setIsProcessing(true);
-    setFeedback({ type: 'success', message: 'Identifying columns with AI...' });
+    if (aiMappings && aiMappings.dateCol) {
+      setFeedback({ type: 'success', message: 'Processing mapped transactions...' });
+    } else {
+      setFeedback({ type: 'success', message: 'Identifying columns with AI...' });
+    }
     
     try {
       let dateHeader: string | undefined = undefined;
@@ -451,15 +493,27 @@ export default function ExpenseUpload() {
 
       if (aiMappings) {
         const mapping = aiMappings;
-        if (mapping.date) dateHeader = headers.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim());
-        if (mapping.description) descHeader = headers.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim());
-        if (mapping.category) catHeader = headers.find(h => h === mapping.category || h.toLowerCase().trim() === mapping.category.toLowerCase().trim());
-        if (mapping.amount) amountHeader = headers.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim());
-        if (mapping.reference) notesHeader = headers.find(h => h === mapping.reference || h.toLowerCase().trim() === mapping.reference.toLowerCase().trim());
-        if (!notesHeader && mapping.notes) notesHeader = headers.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim());
-        
-        if (mapping.withdrawal) expenseHeader = headers.find(h => h === mapping.withdrawal || h.toLowerCase().trim() === mapping.withdrawal.toLowerCase().trim());
-        if (mapping.deposit) incomeHeader = headers.find(h => h === mapping.deposit || h.toLowerCase().trim() === mapping.deposit.toLowerCase().trim());
+        if (mapping.dateCol) {
+          dateHeader = headers.find(h => h === mapping.dateCol);
+          descHeader = headers.find(h => h === mapping.descCol);
+          notesHeader = headers.find(h => h === mapping.refCol);
+          if (mapping.amountType === 'dual') {
+            expenseHeader = headers.find(h => h === mapping.withdrawalCol);
+            incomeHeader = headers.find(h => h === mapping.depositCol);
+          } else {
+            amountHeader = headers.find(h => h === mapping.amountCol);
+          }
+        } else {
+          if (mapping.date) dateHeader = headers.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim());
+          if (mapping.description) descHeader = headers.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim());
+          if (mapping.category) catHeader = headers.find(h => h === mapping.category || h.toLowerCase().trim() === mapping.category.toLowerCase().trim());
+          if (mapping.amount) amountHeader = headers.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim());
+          if (mapping.reference) notesHeader = headers.find(h => h === mapping.reference || h.toLowerCase().trim() === mapping.reference.toLowerCase().trim());
+          if (!notesHeader && mapping.notes) notesHeader = headers.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim());
+          
+          if (mapping.withdrawal) expenseHeader = headers.find(h => h === mapping.withdrawal || h.toLowerCase().trim() === mapping.withdrawal.toLowerCase().trim());
+          if (mapping.deposit) incomeHeader = headers.find(h => h === mapping.deposit || h.toLowerCase().trim() === mapping.deposit.toLowerCase().trim());
+        }
       } else {
         try {
           const sampleRows = rows.slice(0, 4).map(rowObj => {
@@ -1030,7 +1084,121 @@ export default function ExpenseUpload() {
       throw new Error('No transaction rows were parsed. Ensure rows under the headers have transactions.');
     }
 
-    await processRawRows(jsonData, headers.filter(Boolean), usedAi ? columnMappings : undefined);
+    // instead of calling processRawRows directly:
+    const activeHeaders = headers.filter(Boolean);
+    
+    let dateDefault = '';
+    let descDefault = '';
+    let refDefault = '';
+    let withdrawalDefault = '';
+    let depositDefault = '';
+    let amountDefault = '';
+    let amtType: 'single' | 'dual' = 'single';
+
+    if (usedAi && columnMappings) {
+      // populate using AI mappings if available
+      const mapping = columnMappings;
+      if (mapping.date) dateDefault = activeHeaders.find(h => h === mapping.date || h.toLowerCase().trim() === mapping.date.toLowerCase().trim()) || '';
+      if (mapping.description) descDefault = activeHeaders.find(h => h === mapping.description || h.toLowerCase().trim() === mapping.description.toLowerCase().trim()) || '';
+      if (mapping.reference) refDefault = activeHeaders.find(h => h === mapping.reference || h.toLowerCase().trim() === mapping.reference.toLowerCase().trim()) || '';
+      if (!refDefault && mapping.notes) refDefault = activeHeaders.find(h => h === mapping.notes || h.toLowerCase().trim() === mapping.notes.toLowerCase().trim()) || '';
+      
+      if (mapping.withdrawal) {
+        withdrawalDefault = activeHeaders.find(h => h === mapping.withdrawal || h.toLowerCase().trim() === mapping.withdrawal.toLowerCase().trim()) || '';
+        amtType = 'dual';
+      }
+      if (mapping.deposit) {
+        depositDefault = activeHeaders.find(h => h === mapping.deposit || h.toLowerCase().trim() === mapping.deposit.toLowerCase().trim()) || '';
+        amtType = 'dual';
+      }
+      if (mapping.amount) {
+        amountDefault = activeHeaders.find(h => h === mapping.amount || h.toLowerCase().trim() === mapping.amount.toLowerCase().trim()) || '';
+      }
+    }
+
+    if (!dateDefault) dateDefault = findBestHeader(activeHeaders, HEADER_KEYWORDS.date) || '';
+    if (!descDefault) descDefault = findBestHeader(activeHeaders, HEADER_KEYWORDS.description) || '';
+    
+    if (importOption === 'bank_excel') {
+      withdrawalDefault = activeHeaders.find(h => {
+        const l = h.toLowerCase().trim();
+        return l === 'withdrawal' || l.includes('withdrawal') || l === 'withdrawal amount' || l === 'withdrwl' || l === 'debit' || l === 'dr';
+      }) || '';
+      depositDefault = activeHeaders.find(h => {
+        const l = h.toLowerCase().trim();
+        return l === 'deposit' || l.includes('deposit') || l === 'deposit amount' || l === 'credit' || l === 'cr';
+      }) || '';
+      if (withdrawalDefault || depositDefault) {
+        amtType = 'dual';
+      }
+    }
+
+    if (!withdrawalDefault) {
+      withdrawalDefault = findBestHeader(activeHeaders, HEADER_KEYWORDS.expense) || '';
+    }
+    if (!depositDefault) {
+      depositDefault = findBestHeader(activeHeaders, HEADER_KEYWORDS.income) || '';
+    }
+    if (withdrawalDefault || depositDefault) {
+      amtType = 'dual';
+    }
+
+    if (!amountDefault && amtType === 'single') {
+      amountDefault = findBestHeader(activeHeaders, HEADER_KEYWORDS.amount) || '';
+    }
+    if (!refDefault) {
+      refDefault = findBestHeader(activeHeaders, HEADER_KEYWORDS.reference) || '';
+    }
+
+    // Heuristics fallbacks
+    const requiredMatches = Math.max(1, Math.min(2, jsonData.length));
+    if (!dateDefault && activeHeaders.length > 0) {
+      for (const h of activeHeaders) {
+        const sample = jsonData.slice(0, 5).map(r => String(r[h] || ''));
+        const isDateLike = sample.filter(s => {
+          if (!s) return false;
+          const d = new Date(s);
+          return !isNaN(d.getTime()) && s.length >= 6 && /\d/.test(s);
+        }).length >= requiredMatches;
+        if (isDateLike) {
+          dateDefault = h;
+          break;
+        }
+      }
+    }
+
+    if (amtType === 'single' && !amountDefault && activeHeaders.length > 0) {
+      for (const h of activeHeaders) {
+        const sample = jsonData.slice(0, 5).map(r => parseRobustFloat(r[h]));
+        const numericCount = sample.filter(n => n !== 0).length;
+        if (numericCount >= requiredMatches) {
+          amountDefault = h;
+          break;
+        }
+      }
+    }
+
+    if (!descDefault && activeHeaders.length > 0) {
+      const leftover = activeHeaders.filter(h => h !== dateDefault && h !== amountDefault && h !== withdrawalDefault && h !== depositDefault);
+      if (leftover.length > 0) {
+        descDefault = leftover[0];
+      }
+    }
+
+    setAvailableHeaders(activeHeaders);
+    setRawParsedRows(jsonData);
+    
+    setMappedDateCol(dateDefault);
+    setMappedDescCol(descDefault);
+    setMappedRefCol(refDefault);
+    setAmountMappingType(amtType);
+    setMappedAmountCol(amountDefault);
+    setMappedWithdrawalCol(withdrawalDefault);
+    setMappedDepositCol(depositDefault);
+
+    setStep('mapping');
+    setIsProcessing(false);
+    setFeedback(null);
   };
 
   const parseExcel = (file: File) => {
@@ -1084,6 +1252,645 @@ export default function ExpenseUpload() {
       setIsProcessing(false);
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const processRowsToParsedTransactions = (rows: any[], mappings: {
+    dateCol: string;
+    descCol: string;
+    refCol: string;
+    amountCol: string;
+    withdrawalCol: string;
+    depositCol: string;
+  }) => {
+    const isDual = !!(mappings.withdrawalCol || mappings.depositCol);
+    const activeRules = [...combinedRules].sort((a, b) => (a.order || 0) - (b.order || 0)).filter(r => r.active);
+
+    return rows.map((row, idx) => {
+      let amount = 0;
+      let type = 'Expense';
+      let srcIn = '';
+      let srcOut = '';
+
+      if (isDual) {
+        // Dual column format! Check deposit and withdrawal
+        const valIn = mappings.depositCol ? parseRobustFloat(row[mappings.depositCol]) : 0;
+        const valOut = mappings.withdrawalCol ? parseRobustFloat(row[mappings.withdrawalCol]) : 0;
+        srcIn = mappings.depositCol ? String(row[mappings.depositCol] || '') : '';
+        srcOut = mappings.withdrawalCol ? String(row[mappings.withdrawalCol] || '') : '';
+
+        if (valIn !== 0 && !isNaN(valIn)) {
+          amount = Math.abs(valIn);
+          type = 'Income';
+        } else if (valOut !== 0 && !isNaN(valOut)) {
+          amount = Math.abs(valOut);
+          type = 'Expense';
+        }
+      } else {
+        // Single amount column format
+        const rawVal = mappings.amountCol ? parseRobustFloat(row[mappings.amountCol]) : 0;
+        if (rawVal !== 0 && !isNaN(rawVal)) {
+          amount = Math.abs(rawVal);
+          type = rawVal >= 0 ? 'Income' : 'Expense';
+        }
+      }
+
+      const description = (mappings.descCol ? String(row[mappings.descCol] || '') : 'No Description').trim();
+      
+      // Determine mapped headers to find extra unmapped columns
+      const mappedKeys = [
+        mappings.dateCol,
+        mappings.descCol,
+        mappings.amountCol,
+        mappings.withdrawalCol,
+        mappings.depositCol,
+        mappings.refCol
+      ].filter(Boolean);
+
+      const refColValue = (mappings.refCol ? String(row[mappings.refCol] || '') : '').trim();
+      const extraParts: string[] = [];
+      Object.keys(row).forEach(key => {
+        if (!mappedKeys.includes(key)) {
+          const val = String(row[key] || '').trim();
+          if (val) {
+            extraParts.push(`${key}: ${val}`);
+          }
+        }
+      });
+
+      // Construct final Notes/Reference mapping
+      let reference = refColValue;
+      if (extraParts.length > 0) {
+        const extraStr = extraParts.join(', ');
+        if (reference) {
+          reference = `${reference}, ${extraStr}`;
+        } else {
+          reference = extraStr;
+        }
+      }
+
+      const formattedDate = parseRobustDate(mappings.dateCol ? row[mappings.dateCol] : null);
+
+      // Evaluate matching rules!
+      let category = '';
+      let matchedByRule = false;
+      let ruleNameMatched = '';
+
+      for (const rule of activeRules) {
+        const isMatch = rule.conditions?.every((cond: any) => {
+          if (cond.field === 'description') {
+            const fieldVal = String(description || '').toLowerCase();
+            const searchVal = String(cond.value || '').toLowerCase();
+            return cond.operator === 'equals' ? (fieldVal === searchVal) : fieldVal.includes(searchVal);
+          }
+          if (cond.field === 'reference') {
+            const fieldVal = String(reference || '').toLowerCase();
+            const searchVal = String(cond.value || '').toLowerCase();
+            return cond.operator === 'equals' ? (fieldVal === searchVal) : fieldVal.includes(searchVal);
+          }
+          if (cond.field === 'flow') {
+            if (cond.value === 'withdrawal') return type === 'Expense';
+            if (cond.value === 'deposit') return type === 'Income';
+            return true;
+          }
+          return false;
+        });
+
+        if (isMatch) {
+          const action = rule.actions?.find((a: any) => a.type === 'setCategory');
+          if (action) {
+            category = action.value;
+            matchedByRule = true;
+            ruleNameMatched = rule.name || `Keyword match`;
+            break;
+          }
+        }
+      }
+
+      if (!matchedByRule) {
+        category = type === 'Income' ? 'Income' : 'Expense';
+      }
+
+      const detectedType = categoryTypeMap.get((category || '').toLowerCase()) || type;
+
+      const tx: ParsedTransaction = {
+        id: `v2-row-${idx}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        date: formattedDate,
+        amount,
+        description,
+        category,
+        reference,
+        type: detectedType,
+        srcIncome: srcIn,
+        srcExpense: srcOut
+      };
+
+      return tx;
+    }).filter(t => !isNaN(t.amount) && t.amount !== 0);
+  };
+
+  const handleFileProcessV2 = (file: File) => {
+    const fileName = file.name;
+    setV2Filename(fileName);
+    setV2Step('processing');
+    setV2Feedback({ type: 'success', message: 'Reading and parsing file structure...' });
+
+    const isExcelFile = fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls');
+    const isCsvFile = fileName.toLowerCase().endsWith('.csv') || fileName.toLowerCase().endsWith('.txt') || fileName.toLowerCase().endsWith('.tsv');
+
+    if (!isExcelFile && !isCsvFile) {
+      setV2Feedback({ type: 'error', message: 'Unsupported file style! Please select a valid Excel or CSV/Text file.' });
+      setV2Step('upload');
+      return;
+    }
+
+    const fileReader = new FileReader();
+    fileReader.onload = async (e) => {
+      try {
+        let allRows: any[][] = [];
+        if (isExcelFile) {
+          const data = e.target?.result;
+          if (!data) throw new Error('Failed to read file.');
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          
+          let worksheet = null;
+          for (const sheetName of workbook.SheetNames) {
+            const ws = workbook.Sheets[sheetName];
+            const sheetRows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
+            const nonBlank = sheetRows.filter(r => r && r.some(c => String(c || '').trim() !== ""));
+            if (nonBlank.length > 0) {
+              worksheet = ws;
+              break;
+            }
+          }
+          if (!worksheet) throw new Error('No valid worksheet found with records.');
+          allRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+        } else {
+          const text = e.target?.result as string;
+          const parsed = Papa.parse(text, { skipEmptyLines: true });
+          allRows = parsed.data as any[][];
+        }
+
+        if (allRows.length === 0) {
+          throw new Error('No table rows detected in uploaded file.');
+        }
+
+        setV2RawRows(allRows);
+        setV2Feedback({ type: 'success', message: 'Identifying headers and columns automatically...' });
+
+        // Let's call the server mapping API
+        let mappedColumns: any = null;
+        let headerRowIndex = 0;
+        let dataRowIndices: number[] = [];
+        let usedAi = false;
+
+        try {
+          const response = await fetch('/api/delight/bank-statement-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ allRows: allRows.slice(0, 100) })
+          });
+          if (response.ok) {
+            const result = await response.json();
+            headerRowIndex = result.headerRowIndex;
+            mappedColumns = result.columnMappings;
+            dataRowIndices = result.dataRowIndices;
+            usedAi = true;
+          }
+        } catch (err) {
+          console.warn('AI bank-statement-mapping API failed, using heuristics instead.', err);
+        }
+
+        // If AI is not used, evaluate heuristic headers
+        if (!usedAi) {
+          headerRowIndex = findHeaderRowIndex(allRows);
+        }
+
+        setV2HeaderRowIndex(headerRowIndex);
+
+        const headersRow = allRows[headerRowIndex] || [];
+        const seen = new Set<string>();
+        const headers = headersRow.map((h, colIdx) => {
+          let name = String(h || '').trim();
+          if (!name) name = `Column_${colIdx + 1}`;
+          if (seen.has(name)) name = `${name}_${colIdx + 1}`;
+          seen.add(name);
+          return name;
+        });
+
+        const activeHeaders = headers.filter(Boolean);
+
+        // Map column header strings using fallback heuristics
+        let dateCol = '';
+        let descCol = '';
+        let refCol = '';
+        let amountCol = '';
+        let withdrawalCol = '';
+        let depositCol = '';
+
+        if (usedAi && mappedColumns) {
+          if (mappedColumns.date) dateCol = activeHeaders.find(h => h === mappedColumns.date || h.toLowerCase() === mappedColumns.date.toLowerCase()) || '';
+          if (mappedColumns.description) descCol = activeHeaders.find(h => h === mappedColumns.description || h.toLowerCase() === mappedColumns.description.toLowerCase()) || '';
+          if (mappedColumns.reference) refCol = activeHeaders.find(h => h === mappedColumns.reference || h.toLowerCase() === mappedColumns.reference.toLowerCase()) || '';
+          if (mappedColumns.amount) amountCol = activeHeaders.find(h => h === mappedColumns.amount || h.toLowerCase() === mappedColumns.amount.toLowerCase()) || '';
+          if (mappedColumns.withdrawal) withdrawalCol = activeHeaders.find(h => h === mappedColumns.withdrawal || h.toLowerCase() === mappedColumns.withdrawal.toLowerCase()) || '';
+          if (mappedColumns.deposit) depositCol = activeHeaders.find(h => h === mappedColumns.deposit || h.toLowerCase() === mappedColumns.deposit.toLowerCase()) || '';
+        }
+
+        // Apply fallback standard heuristics if headers are missing
+        if (!dateCol) dateCol = findBestHeader(activeHeaders, HEADER_KEYWORDS.date) || '';
+        if (!descCol) descCol = findBestHeader(activeHeaders, HEADER_KEYWORDS.description) || '';
+        if (!refCol) refCol = findBestHeader(activeHeaders, HEADER_KEYWORDS.reference) || '';
+        
+        // Look for withdrawal/deposit signatures to identify dual column format
+        if (!withdrawalCol) {
+          withdrawalCol = activeHeaders.find(h => {
+            const l = h.toLowerCase();
+            return l === 'withdrawal' || l.includes('withdrawal') || l === 'debit' || l === 'dr' || l === 'withdrawal amount' || l === 'withdrwl';
+          }) || '';
+        }
+        if (!depositCol) {
+          depositCol = activeHeaders.find(h => {
+            const l = h.toLowerCase();
+            return l === 'deposit' || l.includes('deposit') || l === 'credit' || l === 'cr' || l === 'deposit amount';
+          }) || '';
+        }
+
+        // Fallback for amount
+        if (!amountCol && !withdrawalCol && !depositCol) {
+          amountCol = findBestHeader(activeHeaders, HEADER_KEYWORDS.amount) || '';
+        }
+
+        // Fallback Date scan from data rows if still blank
+        const sampleRowsJson = allRows.slice(headerRowIndex + 1, headerRowIndex + 6).map(row => {
+          const obj: any = {};
+          headers.forEach((h, colIdx) => { if (h) obj[h] = row[colIdx]; });
+          return obj;
+        });
+
+        if (!dateCol && activeHeaders.length > 0) {
+          // find first column with date-like format
+          for (const h of activeHeaders) {
+            const isDateLike = sampleRowsJson.some(row => {
+              const val = String(row[h] || '');
+              const d = new Date(val);
+              return !isNaN(d.getTime()) && val.length >= 6 && /\d/.test(val);
+            });
+            if (isDateLike) {
+              dateCol = h;
+              break;
+            }
+          }
+        }
+
+        // If still no amount, search for numeric column
+        if (!amountCol && !withdrawalCol && !depositCol && activeHeaders.length > 0) {
+          for (const h of activeHeaders) {
+            const hasNumeric = sampleRowsJson.some(row => {
+              const f = parseRobustFloat(row[h]);
+              return f !== 0 && !isNaN(f);
+            });
+            if (hasNumeric) {
+              amountCol = h;
+              break;
+            }
+          }
+        }
+
+        // If description still blank, assign left-over column
+        if (!descCol && activeHeaders.length > 0) {
+          const leftover = activeHeaders.filter(h => h !== dateCol && h !== amountCol && h !== withdrawalCol && h !== depositCol && h !== refCol);
+          if (leftover.length > 0) descCol = leftover[0];
+        }
+
+        // Construct raw data rows objects mapped to column names
+        const rawRowsObjects = allRows.map((row, rowIndex) => {
+          if (rowIndex <= headerRowIndex) return null;
+          if (usedAi && rowIndex < 60 && !dataRowIndices.includes(rowIndex)) return null;
+
+          const hasContent = row.some(c => c !== undefined && c !== null && String(c).trim() !== "");
+          if (!hasContent) return null;
+
+          const obj: any = {};
+          headers.forEach((h, idx) => { if (h) obj[h] = row[idx]; });
+          return obj;
+        }).filter(Boolean) as any[];
+
+        if (rawRowsObjects.length === 0) {
+          throw new Error('No valid transactions parsed from rows.');
+        }
+
+        // Build Parsed Transactions!
+        const finalTransactions = processRowsToParsedTransactions(rawRowsObjects, {
+          dateCol,
+          descCol,
+          refCol,
+          amountCol,
+          withdrawalCol,
+          depositCol
+        });
+
+        setV2ParsedData(finalTransactions);
+        setV2SelectedRows(new Set(finalTransactions.map(t => t.id)));
+        setV2Step('rules');
+        setV2Feedback(null);
+      } catch (err: any) {
+        console.error('V2 File Upload processing error:', err);
+        setV2Feedback({ type: 'error', message: err.message || 'Error processing statements spreadsheet.' });
+        setV2Step('upload');
+      }
+    };
+
+    fileReader.onerror = () => {
+      setV2Feedback({ type: 'error', message: 'FileReader error occurred.' });
+      setV2Step('upload');
+    };
+
+    if (isExcelFile) {
+      fileReader.readAsArrayBuffer(file);
+    } else {
+      fileReader.readAsText(file);
+    }
+  };
+
+  const findMatchingRuleForField = (field: 'description' | 'reference', value: string, rowType?: string) => {
+    if (!value) return null;
+    const valLower = value.toLowerCase().trim();
+    
+    return combinedRules.find(rule => {
+      const cond = rule.conditions?.find((c: any) => c.field === field);
+      if (!cond || !cond.value) return false;
+      const ruleValLower = cond.value.toLowerCase().trim();
+      
+      // If rule is specific to flow, check that it matches
+      const flowCond = rule.conditions?.find((c: any) => c.field === 'flow');
+      if (flowCond && rowType) {
+        const isExp = rowType.toLowerCase() === 'expense' || rowType === 'withdrawal';
+        if (flowCond.value === 'withdrawal' && !isExp) return false;
+        if (flowCond.value === 'deposit' && isExp) return false;
+      }
+      
+      return valLower.includes(ruleValLower) || ruleValLower.includes(valLower);
+    });
+  };
+
+  const handleRulePopulate = (field: 'description' | 'reference', tx: ParsedTransaction) => {
+    const valueToUse = field === 'description' ? tx.description : tx.reference;
+    if (!valueToUse) return;
+
+    const matchingRule = findMatchingRuleForField(field, valueToUse, tx.type);
+    if (matchingRule) {
+      setEditingRuleV2Id(matchingRule.id || null);
+      setV2NewRuleField(field);
+      const cond = matchingRule.conditions?.find((c: any) => c.field === field);
+      setV2NewRuleValue(cond?.value || valueToUse);
+      const flowCond = matchingRule.conditions?.find((c: any) => c.field === 'flow');
+      setV2NewRuleFlow((flowCond?.value || 'any') as 'any' | 'withdrawal' | 'deposit');
+      const act = matchingRule.actions?.find((a: any) => a.type === 'setCategory');
+      setV2NewRuleCategory(act?.value || tx.category || '');
+      setV2Feedback({ type: 'success', message: `Editing existing rule: "${matchingRule.name}" (Active Database Rule)` });
+      setTimeout(() => setV2Feedback(null), 4000);
+    } else {
+      setEditingRuleV2Id(null);
+      setV2NewRuleField(field);
+      setV2NewRuleValue(valueToUse);
+      setV2NewRuleFlow((tx.type === 'Income' ? 'deposit' : 'withdrawal') as 'any' | 'withdrawal' | 'deposit');
+      setV2NewRuleCategory(tx.category || '');
+      setV2Feedback({ type: 'success', message: `Rule Creator populated for "${valueToUse}"` });
+      setTimeout(() => setV2Feedback(null), 4000);
+    }
+  };
+
+  const handleSaveRuleV2 = async () => {
+    if (!user?.uid || !activeBusinessId) return;
+    if (!v2NewRuleValue.trim()) {
+      setV2Feedback({ type: 'error', message: 'Please specify a search word or keyword to filter.' });
+      return;
+    }
+    if (!v2NewRuleCategory) {
+      setV2Feedback({ type: 'error', message: 'Please select a target Category.' });
+      return;
+    }
+
+    try {
+      const generatedName = `Auto: ${v2NewRuleValue.trim()} → ${v2NewRuleCategory}`;
+      if (editingRuleV2Id) {
+        const docRef = doc(db, 'users', user.uid, 'import_rules', editingRuleV2Id);
+        await updateDoc(docRef, {
+          name: generatedName,
+          conditions: [
+            { 
+              field: v2NewRuleField, 
+              operator: 'contains', 
+              value: v2NewRuleValue.trim() 
+            },
+            ...(v2NewRuleFlow !== 'any' ? [{ field: 'flow', operator: 'equals', value: v2NewRuleFlow }] : [])
+          ],
+          actions: [
+            { type: 'setCategory', value: v2NewRuleCategory }
+          ],
+          updatedAt: new Date().toISOString()
+        });
+
+        setV2Feedback({ type: 'success', message: `Rule "${v2NewRuleValue}" successfully updated and applied!` });
+        setEditingRuleV2Id(null);
+      } else {
+        const newRule = {
+          name: generatedName,
+          active: true,
+          businessId: activeBusinessId,
+          userId: user.uid,
+          conditions: [
+            { 
+              field: v2NewRuleField, 
+              operator: 'contains', 
+              value: v2NewRuleValue.trim() 
+            },
+            ...(v2NewRuleFlow !== 'any' ? [{ field: 'flow', operator: 'equals', value: v2NewRuleFlow }] : [])
+          ],
+          actions: [
+            { type: 'setCategory', value: v2NewRuleCategory }
+          ],
+          updatedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString()
+        };
+
+        await addDoc(collection(db, 'users', user.uid, 'import_rules'), newRule);
+        setV2Feedback({ type: 'success', message: `Rule for "${v2NewRuleValue}" saved successfully and applied live!` });
+      }
+
+      setTimeout(() => setV2Feedback(null), 4000);
+
+      const filterVal = v2NewRuleValue.trim().toLowerCase();
+      const catVal = v2NewRuleCategory;
+      const flowVal = v2NewRuleFlow;
+      const fieldVal = v2NewRuleField;
+
+      // Update in state instantly
+      setV2ParsedData(prevData => {
+        return prevData.map(tx => {
+          let matchesField = false;
+          if (fieldVal === 'description') {
+            matchesField = tx.description.toLowerCase().includes(filterVal);
+          } else {
+            matchesField = (tx.reference || '').toLowerCase().includes(filterVal);
+          }
+
+          let matchesFlow = true;
+          if (flowVal === 'withdrawal') matchesFlow = tx.type === 'Expense';
+          if (flowVal === 'deposit') matchesFlow = tx.type === 'Income';
+
+          if (matchesField && matchesFlow) {
+            const detectedType = categoryTypeMap.get((catVal || '').toLowerCase()) || tx.type;
+            return {
+              ...tx,
+              category: catVal,
+              type: detectedType
+            };
+          }
+          return tx;
+        });
+      });
+
+      setV2NewRuleValue('');
+
+    } catch (err: any) {
+      console.error('Failed to save V2 rule:', err);
+      setV2Feedback({ type: 'error', message: 'Could not write rule to Firestore db.' });
+    }
+  };
+  
+  const closeV2Modal = () => {
+    if (isSaving) return;
+    setIsOpenV2(false);
+    setV2Step('upload');
+    setV2ParsedData([]);
+    setV2RawRows([]);
+    setV2HeaderRowIndex(-1);
+    setShowV2PreviewDialog(false);
+    setV2Feedback(null);
+  };
+
+  const handleImportV2 = async () => {
+    if (!user || !activeBusinessId) return;
+    setIsSaving(true);
+    setV2Feedback(null);
+    
+    try {
+      const rowsToSave = v2ParsedData.filter(t => v2SelectedRows.has(t.id));
+      if (rowsToSave.length === 0) {
+        setV2Feedback({ type: 'error', message: 'No transactions selected for import.' });
+        setIsSaving(false);
+        return;
+      }
+
+      // 1. Fetch existing transactions to perform duplicate checking
+      let existingItems: any[] = [];
+      try {
+        const existingRes = await transactionApi.listPaged(activeBusinessId, { page: 1, pageSize: 15000 });
+        existingItems = existingRes.data?.items || existingRes.data?.Items || [];
+      } catch (fetchErr) {
+        console.warn("Failed to fetch existing transactions for duplicate detection. Proceeding with upload.", fetchErr);
+      }
+
+      // Helper to generate a unique duplicate-check signature
+      const getCheckSignature = (dateStr: any, amountVal: any, descStr: any) => {
+        let dStr = '';
+        if (dateStr) {
+          const d = new Date(dateStr);
+          if (!isNaN(d.getTime())) {
+            dStr = d.toISOString().split('T')[0];
+          } else {
+            dStr = String(dateStr).split('T')[0];
+          }
+        }
+        const amt = Math.round(Number(amountVal || 0) * 100) / 100;
+        const desc = String(descStr || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        return `${dStr}_${amt}_${desc}`;
+      };
+
+      // Set of existing transaction signatures
+      const existingSignatures = new Set<string>();
+      existingItems.forEach((item: any) => {
+        const d = item.date || item.Date;
+        const a = item.amount ?? item.Amount;
+        const desc = item.description || item.Description;
+        existingSignatures.add(getCheckSignature(d, a, desc));
+      });
+
+      // Filter rowsToSave to identify duplicates
+      const uniqueToImport: typeof rowsToSave = [];
+      const duplicates: typeof rowsToSave = [];
+
+      rowsToSave.forEach(t => {
+        const signature = getCheckSignature(t.date, t.amount, t.description);
+        if (existingSignatures.has(signature)) {
+          duplicates.push(t);
+        } else {
+          uniqueToImport.push(t);
+          // Add to current set to prevent duplicate uploads within the same block
+          existingSignatures.add(signature);
+        }
+      });
+
+      if (uniqueToImport.length === 0) {
+        const resultText = `Imported: 0, Duplicates: ${duplicates.length}`;
+        setV2Feedback({ type: 'success', message: resultText });
+        setTimeout(() => {
+          if (isOpenV2) {
+             closeV2Modal();
+          }
+        }, 5000);
+        setIsSaving(false);
+        return;
+      }
+
+      const formattedTransactions = uniqueToImport.map(t => ({
+        date: t.date, 
+        Date: t.date,
+        description: t.description.substring(0, 500),
+        Description: t.description.substring(0, 500),
+        amount: Math.round(t.amount * 100) / 100,
+        Amount: Math.round(t.amount * 100) / 100,
+        category: t.category.substring(0, 100),
+        Category: t.category.substring(0, 100),
+        reference: (t.reference || '').substring(0, 500),
+        Reference: (t.reference || '').substring(0, 500),
+        notes: (t.reference || '').substring(0, 500),
+        Notes: (t.reference || '').substring(0, 500)
+      }));
+
+      await transactionApi.import(activeBusinessId, formattedTransactions);
+      
+      const resultText = `Imported: ${uniqueToImport.length}, Duplicates: ${duplicates.length}`;
+      
+      setV2Feedback({ type: 'success', message: resultText });
+
+      await logEvent({
+        userId: user.uid,
+        userEmail: user.email || 'unknown',
+        userName: user.displayName || 'Delight User',
+        action: 'IMPORT',
+        resourceType: 'expense',
+        details: `V2 Imported ${uniqueToImport.length} transactions, skipped ${duplicates.length} duplicates. ${resultText}`
+      });
+
+      setTimeout(() => {
+        if (isOpenV2) {
+           closeV2Modal();
+        }
+      }, 5000);
+    } catch (err: any) {
+      console.error(err);
+      let msg = 'Error saving transactions via V2 API.';
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (data.detail) msg = data.detail;
+        else if (data.message) msg = data.message;
+      }
+      setV2Feedback({ type: 'error', message: msg });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleFileProcess = (file: File) => {
@@ -1246,10 +2053,17 @@ export default function ExpenseUpload() {
       // Filter and format the data to match the requested API schema
       const formattedTransactions = rowsToSave.map(t => ({
         date: t.date, 
+        Date: t.date,
         description: t.description.substring(0, 500),
+        Description: t.description.substring(0, 500),
         amount: Math.round(t.amount * 100) / 100,
+        Amount: Math.round(t.amount * 100) / 100,
         category: t.category.substring(0, 100),
-        reference: (t.reference || '').substring(0, 500)
+        Category: t.category.substring(0, 100),
+        reference: (t.reference || '').substring(0, 500),
+        Reference: (t.reference || '').substring(0, 500),
+        notes: (t.reference || '').substring(0, 500),
+        Notes: (t.reference || '').substring(0, 500)
       }));
 
       const response = await transactionApi.import(activeBusinessId, formattedTransactions);
@@ -1443,15 +2257,56 @@ export default function ExpenseUpload() {
     }
   };
 
+  const v2Totals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    let selectedCount = 0;
+    v2ParsedData.forEach(tx => {
+      if (v2SelectedRows.has(tx.id)) {
+        selectedCount++;
+        if (tx.type === 'Income') {
+          income += tx.amount;
+        } else {
+          expense += tx.amount;
+        }
+      }
+    });
+    return { income, expense, count: selectedCount };
+  }, [v2ParsedData, v2SelectedRows]);
+
+  const filteredV2Transactions = useMemo(() => {
+    const q = v2SearchTerm.toLowerCase().trim();
+    if (!q) return v2ParsedData;
+    return v2ParsedData.filter(tx => 
+      tx.description.toLowerCase().includes(q) || 
+      (tx.reference || '').toLowerCase().includes(q) ||
+      tx.category.toLowerCase().includes(q)
+    );
+  }, [v2ParsedData, v2SearchTerm]);
+
   return (
     <>
-      <button 
-        onClick={() => { setIsOpen(true); setStep('upload'); setFeedback(null); }} 
-        className="flex items-center gap-2 h-[42px] px-6 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold uppercase text-[10px] tracking-widest transition-all shadow-sm"
-      >
-        <ArrowDown size={18} />
-        Import
-      </button>
+      <div className="flex items-center gap-3">
+        {/* Import V1 (Classic) Trigger */}
+        <button 
+          id="btn-import-v1"
+          onClick={() => { setIsOpen(true); setStep('upload'); setFeedback(null); }} 
+          className="flex items-center gap-2 h-[42px] px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold uppercase text-[10px] tracking-widest transition-all shadow-sm cursor-pointer border border-slate-200"
+        >
+          <Table size={15} />
+          Import V1 (Classic)
+        </button>
+
+        {/* Import V2 (Smart Auto-Detect) Trigger */}
+        <button 
+          id="btn-import-v2"
+          onClick={() => { setIsOpenV2(true); setV2Step('upload'); setV2Feedback(null); }} 
+          className="flex items-center gap-2 h-[42px] px-5 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold uppercase text-[10px] tracking-widest transition-all shadow-md cursor-pointer border-none"
+        >
+          <Zap size={15} className="text-amber-300 animate-pulse" />
+          Import V2 (Smart)
+        </button>
+      </div>
 
       <AnimatePresence>
         {isOpen && (
@@ -1480,7 +2335,8 @@ export default function ExpenseUpload() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                         {step === 'upload' ? 'Step 1: Upload Data' : 
-                         step === 'resolve' ? 'Step 2: Map or Create Categories' : 'Step 3: Preview records'}
+                         step === 'mapping' ? 'Step 2: Map Columns' :
+                         step === 'resolve' ? 'Step 3: Map or Create Categories' : 'Step 4: Preview records'}
                       </p>
                       {step === 'preview' && (
                         <>
@@ -1787,6 +2643,255 @@ export default function ExpenseUpload() {
                     {feedback && step === 'upload' && (
                       <div className={cn(
                         "p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
+                        feedback.type === 'success' ? "bg-green-50 text-green-700 border border-green-100" : "bg-red-50 text-red-700 border border-red-100"
+                      )}>
+                        {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                        <p className="text-sm font-medium">{feedback.message}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : step === 'mapping' ? (
+                  <div className="space-y-6 animate-in fade-in duration-200">
+                    <div className="p-4 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-xl flex items-center gap-3">
+                      <Settings2 size={20} className="text-[#86BC24]" />
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 font-sans tracking-tight">Confirm Column Mapping</h4>
+                        <p className="text-xs text-slate-600">
+                          We mapped columns using automatic heuristics. Please verify and fine-tune formatting before starting parsing.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                      {/* Left: Interactive Field Mappings list */}
+                      <div className="lg:col-span-5 space-y-5 bg-slate-50 p-6 rounded-xl border border-slate-200/60 shadow-sm font-sans">
+                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Column Match Configuration</h3>
+                        
+                        {/* Date Column */}
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                            Date Column <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={mappedDateCol}
+                            onChange={(e) => setMappedDateCol(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                          >
+                            <option value="">-- Choose Date Column --</option>
+                            {availableHeaders.map(h => (
+                              <option key={h} value={h}>{h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Description Column */}
+                        <div className="space-y-1.5 mt-4">
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                            Description Column <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={mappedDescCol}
+                            onChange={(e) => setMappedDescCol(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                          >
+                            <option value="">-- Choose Description Column --</option>
+                            {availableHeaders.map(h => (
+                              <option key={h} value={h}>{h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Reference / Notes Column (Optional) */}
+                        <div className="space-y-1.5 mt-4">
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
+                            Reference / Notes Column <span className="text-slate-400 font-normal">(Optional)</span>
+                          </label>
+                          <select
+                            value={mappedRefCol}
+                            onChange={(e) => setMappedRefCol(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                          >
+                            <option value="">-- Skip Column / None --</option>
+                            {availableHeaders.map(h => (
+                              <option key={h} value={h}>{h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Amounts Configuration */}
+                        <div className="border-t border-slate-200/80 pt-4 mt-6">
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                            Amount Formats
+                          </label>
+                          
+                          <div className="flex flex-col gap-2 mb-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="radio" 
+                                name="amt_map_type" 
+                                value="single"
+                                checked={amountMappingType === 'single'}
+                                onChange={() => setAmountMappingType('single')}
+                                className="text-[#86BC24] focus:ring-[#86BC24] h-4 w-4"
+                              />
+                              <span className="text-xs font-bold text-slate-700">Single Column Amount</span>
+                            </label>
+                            
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="radio" 
+                                name="amt_map_type" 
+                                value="dual"
+                                checked={amountMappingType === 'dual'}
+                                onChange={() => setAmountMappingType('dual')}
+                                className="text-[#86BC24] focus:ring-[#86BC24] h-4 w-4"
+                              />
+                              <span className="text-xs font-bold text-slate-700">Dual Column (Withdrawal/Deposit)</span>
+                            </label>
+                          </div>
+
+                          {amountMappingType === 'single' ? (
+                            <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1">
+                              <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                                Amount Column <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={mappedAmountCol}
+                                onChange={(e) => setMappedAmountCol(e.target.value)}
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                              >
+                                <option value="">-- Choose Amount Column --</option>
+                                {availableHeaders.map(h => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                              <p className="text-[10px] text-slate-400 font-medium mt-1 leading-normal">
+                                Positive values are treated as Deposits/Income; negative values are treated as Expenses.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-3 mt-2 animate-in fade-in slide-in-from-top-1">
+                              <div className="space-y-1.5">
+                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                                  Withdrawal / Debit <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                  value={mappedWithdrawalCol}
+                                  onChange={(e) => setMappedWithdrawalCol(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                                >
+                                  <option value="">-- Choose Withdrawal --</option>
+                                  {availableHeaders.map(h => (
+                                    <option key={h} value={h}>{h}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                                  Deposit / Credit <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                  value={mappedDepositCol}
+                                  onChange={(e) => setMappedDepositCol(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                                >
+                                  <option value="">-- Choose Deposit --</option>
+                                  {availableHeaders.map(h => (
+                                    <option key={h} value={h}>{h}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Actual Spreadsheet File Sample Data */}
+                      <div className="lg:col-span-7 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">
+                            Spreadsheet Source Sample Rows
+                          </h3>
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                            Showing up to 4 rows
+                          </span>
+                        </div>
+                        
+                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse font-mono">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200">
+                                  {availableHeaders.map(h => {
+                                    const isMapped = h === mappedDateCol || h === mappedDescCol || h === mappedRefCol || (amountMappingType === 'single' ? h === mappedAmountCol : (h === mappedWithdrawalCol || h === mappedDepositCol));
+                                    
+                                    let columnBadge = "";
+                                    let badgeColor = "bg-slate-100 text-slate-500 border-slate-200";
+                                    if (h === mappedDateCol) {
+                                      columnBadge = "Date";
+                                      badgeColor = "bg-blue-50 text-blue-700 border-blue-200";
+                                    } else if (h === mappedDescCol) {
+                                      columnBadge = "Description";
+                                      badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                                    } else if (h === mappedRefCol) {
+                                      columnBadge = "Reference";
+                                      badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+                                    } else if (amountMappingType === 'single' && h === mappedAmountCol) {
+                                      columnBadge = "Amount";
+                                      badgeColor = "bg-amber-50 text-amber-700 border-amber-200";
+                                    } else if (amountMappingType === 'dual' && h === mappedWithdrawalCol) {
+                                      columnBadge = "Withdrawal";
+                                      badgeColor = "bg-red-50 text-red-700 border-red-200";
+                                    } else if (amountMappingType === 'dual' && h === mappedDepositCol) {
+                                      columnBadge = "Deposit";
+                                      badgeColor = "bg-green-50 text-green-700 border-green-200";
+                                    }
+
+                                    return (
+                                      <th key={h} className={cn("px-4 py-4 min-w-[145px] border-r border-slate-100 text-slate-700", isMapped && "bg-slate-50/40")}>
+                                        <div className="flex flex-col gap-1 items-start">
+                                          <span className="text-[10px] font-bold break-all">{h}</span>
+                                          {columnBadge && (
+                                            <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none mt-0.5 uppercase", badgeColor)}>
+                                              {columnBadge}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </th>
+                                    );
+                                  })}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rawParsedRows.slice(0, 4).map((row, rIdx) => (
+                                  <tr key={rIdx} className="hover:bg-slate-50/30 transition-colors border-b border-slate-100 last:border-0">
+                                    {availableHeaders.map(h => {
+                                      const isMapped = h === mappedDateCol || h === mappedDescCol || h === mappedRefCol || (amountMappingType === 'single' ? h === mappedAmountCol : (h === mappedWithdrawalCol || h === mappedDepositCol));
+                                      return (
+                                        <td key={h} className={cn("px-4 py-3 text-slate-600 text-xs border-r border-slate-100 truncate max-w-[200px]", isMapped && "bg-[#86BC24]/5 font-medium text-slate-900")}>
+                                          {row[h] !== undefined && row[h] !== null ? String(row[h]) : '-'}
+                                        </td>
+                                      )
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-4 border border-slate-200/50 rounded-lg flex items-start gap-2.5">
+                          <HelpCircle size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-slate-500 leading-normal">
+                            The visual sample above reflects rows from your uploaded spreadsheet file. Choose dropdown choices on the left to map them. Highlighted table columns correspond directly with your mapped selections.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {feedback && step === 'mapping' && (
+                      <div className={cn(
+                        "p-4 rounded-xl flex items-center gap-3 animate-in fade-in duration-200",
                         feedback.type === 'success' ? "bg-green-50 text-green-700 border border-green-100" : "bg-red-50 text-red-700 border border-red-100"
                       )}>
                         {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
@@ -2255,19 +3360,60 @@ export default function ExpenseUpload() {
                           if (unresolvedNames.length > 0) {
                             setStep('resolve');
                           } else {
-                            setStep('upload');
+                            setStep('mapping');
                           }
+                        } else if (step === 'resolve') {
+                          setStep('mapping');
                         } else {
                           setStep('upload');
                         }
                       }}
-                      className="px-6 py-2.5 h-10 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-orange-100 transition-all flex items-center gap-2"
+                      className="px-6 py-2.5 h-10 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-orange-100 transition-all flex items-center gap-2 cursor-pointer"
                     >
                       <ChevronLeft size={16} />
                       Back
                     </button>
                   )}
-                  {step === 'resolve' ? (
+                  {step === 'mapping' ? (
+                     <button 
+                      onClick={async () => {
+                        // Validate selected mappings
+                        if (!mappedDateCol) {
+                          setFeedback({ type: 'error', message: 'Please map the Date column.' });
+                          return;
+                        }
+                        if (!mappedDescCol) {
+                          setFeedback({ type: 'error', message: 'Please map the Description column.' });
+                          return;
+                        }
+                        if (amountMappingType === 'single' && !mappedAmountCol) {
+                          setFeedback({ type: 'error', message: 'Please map the Amount column.' });
+                          return;
+                        }
+                        if (amountMappingType === 'dual' && (!mappedWithdrawalCol || !mappedDepositCol)) {
+                          setFeedback({ type: 'error', message: 'Please map both Withdrawal and Deposit columns.' });
+                          return;
+                        }
+                        
+                        setFeedback(null);
+                        
+                        // Proceed to process transactions with chosen mappings
+                        await processRawRows(rawParsedRows, availableHeaders, {
+                          dateCol: mappedDateCol,
+                          descCol: mappedDescCol,
+                          refCol: mappedRefCol,
+                          amountType: amountMappingType,
+                          amountCol: mappedAmountCol,
+                          withdrawalCol: mappedWithdrawalCol,
+                          depositCol: mappedDepositCol
+                        });
+                      }}
+                      className="px-8 h-10 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2 cursor-pointer"
+                    >
+                      Process Transactions
+                      <ChevronRight size={16} />
+                    </button>
+                  ) : step === 'resolve' ? (
                      <button 
                       onClick={finalizeResolution}
                       disabled={isProcessing}
@@ -2727,6 +3873,687 @@ export default function ExpenseUpload() {
           </div>
         </div>
       )}
+
+      {/* V2 Automated Import Modal Dialog */}
+      <AnimatePresence>
+        {isOpenV2 && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-200">
+            {/* Dark blur backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeV2Modal}
+              className="absolute inset-0 bg-slate-900/65 backdrop-blur-sm"
+              id="v2-modal-backdrop"
+            />
+            {/* Modal Container */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              className="relative w-full max-w-[1440px] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-100"
+              id="v2-modal-container"
+            >
+              {/* Header */}
+              <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white sticky top-0 z-10 select-none">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-[#86BC24]">
+                    <Zap size={22} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-bold text-slate-900 tracking-tight">TRANSACTION IMPORT V2</h2>
+                      <span className="text-[9px] bg-[#86BC24]/10 text-[#86BC24] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider">AI Auto-Detect</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 font-mono">
+                      {v2Step === 'upload' ? 'Upload statement file' : 
+                       v2Step === 'processing' ? 'Auto-identifying spreadsheet tables...' : 
+                       'Rules wizard & live books refinement'}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                  {v2Step === 'rules' && v2Filename && (
+                    <button 
+                      onClick={() => setShowV2PreviewDialog(true)}
+                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-[10px] font-mono font-bold text-slate-700 flex items-center gap-2 transition-colors cursor-pointer group/filename"
+                      title="Click to preview raw spreadsheet layout"
+                    >
+                      <FileText size={12} className="text-[#86BC24]" />
+                      <span className="max-w-[200px] truncate">{v2Filename}</span>
+                      <span className="text-[8.5px] bg-[#86BC24] text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider scale-95 origin-right">Preview Content</span>
+                    </button>
+                  )}
+                  <button 
+                    onClick={closeV2Modal}
+                    disabled={isSaving}
+                    className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-50/50">
+                {v2Step === 'upload' && (
+                  <div className="flex-1 overflow-y-auto p-8 md:p-12 flex flex-col items-center justify-center">
+                    <div className="w-full max-w-xl bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center flex flex-col items-center">
+                      <div className="w-16 h-16 rounded-2xl bg-[#86BC24]/10 flex items-center justify-center text-[#86BC24] mb-4">
+                        <UploadCloud size={32} />
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 mb-1">Drag & drop your bank statement</h3>
+                      <p className="text-xs text-slate-500 mb-6 max-w-sm">We support CSV, Excel (XLS, XLSX) statement reports from any bank.</p>
+                      
+                      <input 
+                        type="file" 
+                        ref={v2FileInputRef}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileProcessV2(file);
+                        }}
+                        className="hidden" 
+                        accept=".csv,.txt,.tsv,.xlsx,.xls"
+                      />
+
+                      <button 
+                        onClick={() => v2FileInputRef.current?.click()}
+                        className="px-6 h-[40px] bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all shadow-md cursor-pointer flex items-center gap-2 mb-4"
+                      >
+                        Choose File
+                      </button>
+
+                      <div className="w-full border-t border-slate-100 pt-5 mt-2 text-left">
+                        <h4 className="text-[10px] font-bold text-slate-400 font-mono tracking-widest uppercase mb-3">V2 Auto-detect Specifications:</h4>
+                        <ul className="space-y-2 text-xs text-slate-500">
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#86BC24] mt-0.5">✓</span>
+                            <span><strong>Instant Column Mapping</strong>: Auto-scans date, category, explanation/description, reference indices.</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#86BC24] mt-0.5">✓</span>
+                            <span><strong>Dual Amount Splitting</strong>: Separates credit (deposits as <strong>Income</strong>) and debit values (withdrawals as <strong>Expense</strong>) implicitly.</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#86BC24] mt-0.5">✓</span>
+                            <span><strong>Rules Evaluation Matcher</strong>: Auto-categorizes based on descriptions and keywords on load.</span>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                    {v2Feedback && (
+                      <div className={cn(
+                        "mt-4 p-4 rounded-xl text-xs font-medium max-w-xl w-full border flex items-center gap-2 shadow-sm animate-in fade-in duration-150",
+                        v2Feedback.type === 'error' ? "bg-red-50 text-red-600 border-red-100" : "bg-green-50 text-green-600 border-green-100"
+                      )}>
+                        {v2Feedback.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+                        <span>{v2Feedback.message}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {v2Step === 'processing' && (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50/50">
+                    <div className="bg-white rounded-2xl border border-slate-150 shadow-sm p-10 max-w-md w-full text-center flex flex-col items-center">
+                      <Loader2 size={40} className="text-[#86BC24] animate-spin mb-4" />
+                      <h3 className="text-sm font-bold text-slate-800 mb-1 uppercase tracking-wider font-mono">Running V2 Engine</h3>
+                      <p className="text-xs text-slate-500 mb-2 leading-relaxed">
+                        {v2Feedback?.message || 'Structuring data columns and evaluating file values...'}
+                      </p>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-3">
+                        <div className="bg-gradient-to-r from-slate-900 to-[#86BC24] h-full animate-pulse w-4/5" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {v2Step === 'rules' && (
+                  <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+                    
+                    {/* Left column: Mapped Transactions auto-preview table Workspace */}
+                    <div className="lg:col-span-8 flex flex-col overflow-hidden bg-white p-6 min-h-0">
+                      
+                      {/* Top Action search bar & summaries */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 select-none shrink-0 bg-white">
+                        <div className="flex items-center gap-2 flex-1 max-w-sm relative group">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#86BC24] transition-colors" size={14} />
+                          <input 
+                            type="text"
+                            placeholder="Search parsed columns live..."
+                            value={v2SearchTerm}
+                            onChange={(e) => setV2SearchTerm(e.target.value)}
+                            className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24] transition-colors shadow-sm bg-slate-50 hover:bg-white"
+                          />
+                        </div>
+
+                        {/* Financial Metrics Summary Tags */}
+                        <div className="flex items-center gap-3 text-xs font-mono font-bold">
+                          <div className="px-3 py-1.5 bg-green-50/80 border border-green-100 text-green-700 rounded-lg flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span>Inflow: {formatCurrency(v2Totals.income, currencyCode)}</span>
+                          </div>
+                          <div className="px-3 py-1.5 bg-red-50/80 border border-red-100 text-red-700 rounded-lg flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                            <span>Outflow: {formatCurrency(v2Totals.expense, currencyCode)}</span>
+                          </div>
+                          <div className="px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg">
+                            <span>Count: {v2Totals.count} / {v2ParsedData.length} Selected</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Spreadsheet data grid table scroll container */}
+                      <div className="flex-1 overflow-auto border border-slate-150 rounded-xl bg-slate-50/30">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead className="sticky top-0 bg-slate-50 font-bold text-slate-600 border-b border-slate-150 select-none z-10 text-[10px] tracking-widest uppercase">
+                            <tr>
+                              <th className="px-4 py-2.5 w-10">
+                                <input 
+                                  type="checkbox"
+                                  checked={v2SelectedRows.size === v2ParsedData.length && v2ParsedData.length > 0}
+                                  onChange={() => {
+                                    if (v2SelectedRows.size === v2ParsedData.length) {
+                                      setV2SelectedRows(new Set());
+                                    } else {
+                                      setV2SelectedRows(new Set(v2ParsedData.map(t => t.id)));
+                                    }
+                                  }}
+                                  className="rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                                />
+                              </th>
+                              <th className="px-4 py-2.5 font-mono">Date</th>
+                              <th className="px-4 py-2.5">Description (Payee)</th>
+                              <th className="px-4 py-2.5 font-mono">Reference/Memo</th>
+                              <th className="px-4 py-2.5 text-right font-mono">Amount</th>
+                              <th className="px-4 py-2.5">Flow</th>
+                              <th className="px-4 py-2.5 min-w-[200px]">Assign Category (Dropdown Override)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {filteredV2Transactions.map((tx) => {
+                              const isSelected = v2SelectedRows.has(tx.id);
+                              const matchDescRule = findMatchingRuleForField('description', tx.description, tx.type);
+                              const hasDescRuleApplied = !!matchDescRule;
+                              const matchRefRule = tx.reference ? findMatchingRuleForField('reference', tx.reference, tx.type) : null;
+                              const hasRefRuleApplied = !!matchRefRule;
+                              
+                              return (
+                                <tr key={tx.id} className={cn(
+                                  "hover:bg-slate-50/40 transition-colors",
+                                  !isSelected ? "opacity-50 bg-slate-50/20" : "",
+                                  !tx.category ? "bg-red-50/35" : ""
+                                )}>
+                                  {/* Checkbox selector */}
+                                  <td className="px-4 py-3">
+                                    <input 
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        const nextSet = new Set(v2SelectedRows);
+                                        if (nextSet.has(tx.id)) nextSet.delete(tx.id);
+                                        else nextSet.add(tx.id);
+                                        setV2SelectedRows(nextSet);
+                                      }}
+                                      className="rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                                    />
+                                  </td>
+
+                                  {/* Date parsed column */}
+                                  <td className="px-4 py-3 font-mono font-medium text-slate-600 whitespace-nowrap">
+                                    {tx.date}
+                                  </td>
+
+                                  {/* Description parsed column */}
+                                  <td className="px-4 py-3 whitespace-normal max-w-[240px] group relative">
+                                    <div className="flex flex-col gap-1">
+                                      <span className="font-bold text-slate-900" title={tx.description}>
+                                        {tx.description}
+                                      </span>
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 h-4">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRulePopulate('description', tx)}
+                                          className="text-[10px] font-bold text-[#86BC24] hover:text-[#75A51F] underline inline-flex items-center gap-1 cursor-pointer leading-none"
+                                        >
+                                          {hasDescRuleApplied ? '✏️ Edit Rule' : '🏷️ Create Rule'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Reference parsed column */}
+                                  <td className="px-4 py-3 font-mono text-slate-400 max-w-[150px] group relative">
+                                    <div className="flex flex-col gap-1">
+                                      <span className="truncate block" title={tx.reference}>
+                                        {tx.reference || '-'}
+                                      </span>
+                                      {tx.reference && (
+                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 h-4">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRulePopulate('reference', tx)}
+                                            className="text-[10px] font-bold text-[#86BC24] hover:text-[#75A51F] underline inline-flex items-center gap-1 cursor-pointer leading-none"
+                                          >
+                                            {hasRefRuleApplied ? '✏️ Edit Rule' : '🏷️ Create Rule'}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Robust Amount columns list */}
+                                  <td className="px-4 py-3 text-right font-mono font-bold">
+                                    <span className={tx.type === 'Income' ? 'text-green-600' : 'text-slate-800'}>
+                                      {formatCurrency(tx.amount, currencyCode)}
+                                    </span>
+                                  </td>
+
+                                  {/* Debit / Credit status */}
+                                  <td className="px-4 py-3 select-none">
+                                    <span className={cn(
+                                      "text-[9px] font-extrabold px-1.5 py-0.5 rounded tracking-wide uppercase font-mono",
+                                      tx.type === 'Income' ? 'bg-green-100 text-green-700 font-bold' : 'bg-rose-100 text-rose-700 font-bold'
+                                    )}>
+                                      {tx.type === 'Income' ? 'Deposit' : 'Expense'}
+                                    </span>
+                                  </td>
+
+                                  {/* Interactive inline category changer */}
+                                  <td className="px-4 py-3">
+                                    <div className="relative">
+                                      <select 
+                                        value={tx.category || ''}
+                                        onChange={(e) => {
+                                          const nextCategoryValue = e.target.value;
+                                          const nextType = categoryTypeMap.get(nextCategoryValue.toLowerCase()) || tx.type;
+                                          setV2ParsedData(prev => prev.map(item => {
+                                            if (item.id === tx.id) {
+                                              return {
+                                                ...item,
+                                                category: nextCategoryValue,
+                                                type: nextType
+                                              };
+                                            }
+                                            return item;
+                                          }));
+                                        }}
+                                        className={cn(
+                                          "w-full p-1.5 pr-8 bg-white border rounded-lg text-xs font-bold outline-none transition-all appearance-none cursor-pointer",
+                                          !tx.category ? "text-red-500 border-red-100 italic font-mono" : (
+                                            tx.type === 'Income' ? "text-green-700 border-green-200 bg-green-50/20" : "text-slate-700 border-slate-200 bg-slate-50/20"
+                                          ),
+                                          "focus:border-[#86BC24]"
+                                        )}
+                                      >
+                                        <option value="">Select Category...</option>
+                                        {incomeExpenseBudgets.map(b => (
+                                          <option key={b.id} value={b.category || b.name}>
+                                            {b.type?.toLowerCase() === 'income' ? '🟢' : '🔴'} {b.category || b.name} ({b.type})
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                        <ArrowDown size={11} />
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                </tr>
+                              );
+                            })}
+                            
+                            {filteredV2Transactions.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="text-center py-12 text-slate-400 select-none">
+                                  No records found matching the current parsed text filter.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                    </div>
+
+                    {/* Right Column: Rules controller workspace - default styled green background */}
+                    <div className="lg:col-span-4 flex flex-col overflow-y-auto bg-green-50/50 p-6 space-y-5 min-h-0 select-none border-l border-green-100">
+                      
+                      {/* Section 1: Create or Edit a Rule */}
+                      <div className={cn(
+                        "bg-white border rounded-xl p-5 shadow-sm space-y-4 transition-all duration-200",
+                        editingRuleV2Id ? "border-[#86BC24] ring-2 ring-[#86BC24]/20" : "border-slate-200/80"
+                      )}>
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <h4 className="text-[10px] font-mono font-bold tracking-widest uppercase text-slate-500">
+                              {editingRuleV2Id ? "✏️ EDITING AUTOMATION RULE" : "AUTOMATION RULE CREATOR"}
+                            </h4>
+                            {editingRuleV2Id && (
+                              <span className="text-[8px] bg-[#86BC24]/20 text-[#69931b] font-bold px-2 py-0.5 rounded font-mono uppercase">
+                                Modifying
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-505">
+                            {editingRuleV2Id 
+                              ? "Modify conditions and target category below"
+                              : "Create global live-applied keywords to set category"}
+                          </p>
+                        </div>
+
+                        {/* Dropdown column selector */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono font-bold text-slate-500 uppercase">If spreadsheet column</label>
+                          <select 
+                            value={v2NewRuleField}
+                            onChange={(e) => setV2NewRuleField(e.target.value as 'description' | 'reference')}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24] font-bold cursor-pointer"
+                          >
+                            <option value="description">Description (Payee/Supplier/Vendor)</option>
+                            <option value="reference">Reference / Notes / Memo</option>
+                          </select>
+                        </div>
+
+                        {/* Keyword string filter */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono font-bold text-slate-500 uppercase">Contains value (case insensitive)</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. Uber, Starbucks, Salary"
+                            value={v2NewRuleValue}
+                            onChange={(e) => setV2NewRuleValue(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24]"
+                          />
+                        </div>
+
+                        {/* Transaction Flow optional check */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono font-bold text-slate-500 uppercase">Flow Restriction (Optional)</label>
+                          <select 
+                            value={v2NewRuleFlow}
+                            onChange={(e) => setV2NewRuleFlow(e.target.value as 'any' | 'withdrawal' | 'deposit')}
+                            className="w-full px-3 py-2 bg-[#86BC24]/10 border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24] cursor-pointer"
+                          >
+                            <option value="any">Any Flow direction</option>
+                            <option value="withdrawal">Withdrawals & Debits Only (Expenses)</option>
+                            <option value="deposit">Deposits & Credits Only (Income)</option>
+                          </select>
+                        </div>
+
+                        {/* Category Dropdown */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono font-bold text-slate-500 uppercase">Automatically assign category</label>
+                          <select 
+                            value={v2NewRuleCategory}
+                            onChange={(e) => setV2NewRuleCategory(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-[#86BC24] font-bold cursor-pointer"
+                          >
+                            <option value="">Choose Budget Category...</option>
+                            {incomeExpenseBudgets.map(b => (
+                              <option key={b.id} value={b.category || b.name}>
+                                {b.type?.toLowerCase() === 'income' ? '🟢' : '🔴'} {b.category || b.name} ({b.type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-2 pt-1">
+                          <button 
+                            onClick={handleSaveRuleV2}
+                            className="w-full h-9 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                          >
+                            {editingRuleV2Id ? (
+                              <>
+                                <CheckCircle2 size={14} className="text-[#86BC24]" />
+                                Update & Apply Rule
+                              </>
+                            ) : (
+                              <>
+                                <Plus size={14} />
+                                Save & Apply Rule
+                              </>
+                            )}
+                          </button>
+
+                          {editingRuleV2Id && (
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                setEditingRuleV2Id(null);
+                                setV2NewRuleValue('');
+                                setV2NewRuleCategory('');
+                                setV2NewRuleFlow('any');
+                              }}
+                              className="w-full h-8 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-[9px] uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all"
+                            >
+                              Cancel Edit (New Rule)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Section 2: View and Manage existing global rules */}
+                      <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-3 flex-1 overflow-hidden flex flex-col">
+                        <div className="flex justify-between items-center bg-white">
+                          <h4 className="text-[10px] font-mono font-bold text-slate-400 tracking-widest uppercase">ACTIVE DATABASE RULES</h4>
+                          <span className="text-[9px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-full">{combinedRules.length}</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-2 max-h-[220px] lg:max-h-[none] pr-1">
+                          {combinedRules.map((rule, index) => {
+                            const descCond = rule.conditions?.find((c: any) => c.field === 'description');
+                            const refCond = rule.conditions?.find((c: any) => c.field === 'reference');
+                            const act = rule.actions?.find((a: any) => a.type === 'setCategory');
+                            
+                            return (
+                              <div key={rule.id || index} className="p-2.5 rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] gap-2">
+                                <div className="truncate flex-1">
+                                  <div className="font-bold text-slate-800 truncate" title={rule.name}>
+                                    {rule.name}
+                                  </div>
+                                  <div className="text-[9px] text-slate-400 font-medium font-mono truncate mt-0.5">
+                                    IF contains &apos;{descCond?.value || refCond?.value || ''}&apos; → {act?.value || ''}
+                                  </div>
+                                </div>
+                                <button 
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    await handleDeleteRule(rule.id);
+                                  }}
+                                  className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-white"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {combinedRules.length === 0 && (
+                            <div className="py-8 text-center text-slate-400 text-[11px] select-none">
+                              No active category auto-rules catalogued yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-8 py-5 border-t border-slate-100 flex items-center justify-between shrink-0 bg-white sticky bottom-0 z-10 select-none">
+                <div className="flex-1 pr-6">
+                  {v2Feedback && (
+                    <div className={cn(
+                      "flex items-center gap-2 text-xs font-semibold leading-normal p-2 md:p-3 rounded-lg border max-w-[500px] truncate animate-in duration-200",
+                      v2Feedback.type === 'error' ? "bg-red-50 text-red-600 border-red-100" : "bg-green-50 text-green-600 border-green-100"
+                    )}>
+                      {v2Feedback.type === 'error' ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
+                      <span>{v2Feedback.message}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {v2Step === 'rules' && (
+                    <>
+                      <button 
+                        onClick={() => {
+                          setV2Step('upload');
+                          setV2ParsedData([]);
+                          setV2Feedback(null);
+                        }}
+                        disabled={isSaving}
+                        className="px-5 h-[40px] border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-xs font-bold uppercase tracking-widest cursor-pointer transition-all flex items-center gap-2"
+                      >
+                        <ChevronLeft size={16} />
+                        Re-Upload
+                      </button>
+
+                      <button 
+                        onClick={handleImportV2}
+                        disabled={isSaving || v2SelectedRows.size === 0}
+                        className="px-8 h-[40px] bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSaving ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin text-white" />
+                            Saving to Books...
+                          </>
+                        ) : (
+                          <>
+                            COMPLETE IMPORT
+                            <ChevronRight size={16} />
+                          </>
+                        )}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Raw File Preview Dialog (V2) */}
+      <AnimatePresence>
+        {showV2PreviewDialog && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-200 select-none">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowV2PreviewDialog(false)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-md"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-[1240px] bg-white rounded-2xl shadow-2xl flex flex-col max-h-[85vh] border border-slate-200 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 sticky top-0 z-10 select-none">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#86BC24]/10 flex items-center justify-center text-[#86BC24]">
+                    <FileSpreadsheet size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                      <span>Raw Bank Statement Grid</span>
+                      <span className="text-[10px] bg-slate-200/70 text-slate-700 px-2 py-0.5 rounded font-bold font-mono">{v2Filename}</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-505 font-semibold mt-0.5 text-slate-500">
+                      Displaying first {Math.min(250, v2RawRows.length)} rows of {v2RawRows.length} total rows. {v2HeaderRowIndex !== -1 && `Row ${v2HeaderRowIndex + 1} is identified as the Header Row.`}
+                    </p>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={() => setShowV2PreviewDialog(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Table representation */}
+              <div className="flex-1 overflow-auto p-6 bg-slate-100/40">
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs font-mono">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-400 font-bold uppercase text-[9px] border-b border-slate-200 select-none">
+                          <th className="p-2 border-r border-slate-200 text-center w-12 sticky left-0 bg-slate-50 z-20">Row</th>
+                          {v2RawRows[0]?.map((_, colIdx) => {
+                            // Generate column identifier A, B, C...
+                            const colLabel = String.fromCharCode(65 + (colIdx % 26)) + (colIdx >= 26 ? Math.floor(colIdx / 26) : '');
+                            return (
+                              <th key={colIdx} className="p-2 border-r border-[#e2e8f0] text-center min-w-[124px]">
+                                Col {colLabel}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {v2RawRows.slice(0, 250).map((row, rowIdx) => {
+                          const isHeader = rowIdx === v2HeaderRowIndex;
+                          return (
+                            <tr 
+                              key={rowIdx} 
+                              className={cn(
+                                "hover:bg-slate-50/80 transition-colors",
+                                isHeader ? "bg-[#86BC24]/10 hover:bg-[#86BC24]/15 font-bold text-slate-900 border-y-2 border-[#86BC24]/30" : "text-slate-600"
+                              )}
+                            >
+                              <td className={cn(
+                                "p-2 border-r border-slate-200 font-bold text-center select-none sticky left-0 z-10",
+                                isHeader ? "bg-[#86BC24]/20 text-[#86BC24]" : "bg-slate-50/60 text-slate-400"
+                              )}>
+                                {rowIdx + 1}
+                              </td>
+                              {row.map((cell: any, cellIdx: number) => (
+                                <td key={cellIdx} className="p-2 border-r border-slate-100 max-w-[280px] truncate whitespace-nowrap" title={String(cell || '')}>
+                                  {isHeader && (
+                                    <span className="inline-block mr-1 text-[8px] bg-[#86BC24] text-white px-1 rounded uppercase font-extrabold font-sans">
+                                      H
+                                    </span>
+                                  )}
+                                  {cell instanceof Date ? cell.toLocaleDateString() : String(cell !== undefined && cell !== null ? cell : '')}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50 sticky bottom-0 z-10 select-none">
+                <div className="text-[10px] text-slate-505 font-bold uppercase tracking-wider text-slate-500">
+                  Highlight indicator: <span className="inline-block w-3 h-3 bg-[#86BC24]/20 border border-[#86BC24]/30 rounded align-middle mr-1 ml-1" /> Header Row
+                </div>
+                <button
+                  onClick={() => setShowV2PreviewDialog(false)}
+                  className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

@@ -37,6 +37,7 @@ export default function BusinessSettings() {
 
   const [saveSuccess, setSaveSuccess] = useState(false);
   const activeBiz = businesses.find(b => b.id === activeBusinessId);
+  const [lastInitializedId, setLastInitializedId] = useState<string | null>(null);
 
   const handleColorChange = (newColor: string) => {
     if (!formData) return;
@@ -47,7 +48,7 @@ export default function BusinessSettings() {
   };
 
   useEffect(() => {
-    if (activeBiz) {
+    if (activeBiz && activeBiz.id !== lastInitializedId) {
       const settings = getBusinessSettings(activeBiz);
       setFormData({
         name: activeBiz.name,
@@ -61,8 +62,9 @@ export default function BusinessSettings() {
         type: settings.type || 'Personal',
         foreColor: settings.foreColor || '#0f172a',
       });
+      setLastInitializedId(activeBiz.id);
     }
-  }, [activeBiz]);
+  }, [activeBiz, lastInitializedId]);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -85,13 +87,21 @@ export default function BusinessSettings() {
       const { name, isDefault, ...sv } = formData;
       
       const settings = {
+        currency: sv.currency,
         Currency: sv.currency,
+        timezone: sv.timezone,
         Timezone: sv.timezone,
+        isBudgetingEnabled: sv.isBudgetingEnabled,
         IsBudgetingEnabled: sv.isBudgetingEnabled,
+        isGstEnabled: sv.isGstEnabled,
         IsGstEnabled: sv.isGstEnabled,
+        fiscalYearStart: sv.fiscalYearStart,
         FiscalYearStart: sv.fiscalYearStart,
+        fiscalYearEnd: sv.fiscalYearEnd,
         FiscalYearEnd: sv.fiscalYearEnd,
+        type: sv.type,
         Type: sv.type,
+        foreColor: sv.foreColor,
         ForeColor: sv.foreColor
       };
 
@@ -103,7 +113,9 @@ export default function BusinessSettings() {
            await updateBusiness(other.id, { 
              Name: other.name,
              IsDefault: false,
-             Settings: otherSettings
+             Settings: otherSettings,
+             BusinessSettingsJson: JSON.stringify(otherSettings),
+             businessSettingsJson: JSON.stringify(otherSettings)
            } as any, { skipRefresh: true });
         }
       }
@@ -111,7 +123,9 @@ export default function BusinessSettings() {
       await updateBusiness(activeBiz.id, {
         Name: name,
         IsDefault: isDefault,
-        Settings: settings 
+        Settings: settings,
+        BusinessSettingsJson: JSON.stringify(settings),
+        businessSettingsJson: JSON.stringify(settings)
       } as any);
       
       setSaveSuccess(true);

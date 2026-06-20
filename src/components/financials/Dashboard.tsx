@@ -64,7 +64,20 @@ export default function Dashboard() {
           page: 1,
           pageSize: 5000 // Large enough for historical analysis
         });
-        setExpenses(res.data.items || []);
+        const rawItems = res.data.items || res.data.Items || [];
+        const mappedItems = rawItems.map((e: any) => ({
+          ...e,
+          id: e.id || e.Id,
+          date: e.date || e.Date || '',
+          amount: e.amount !== undefined ? e.amount : (e.Amount !== undefined ? e.Amount : 0),
+          deductions: e.deductions !== undefined ? e.deductions : (e.Deductions !== undefined ? e.Deductions : 0),
+          finalAmount: e.finalAmount !== undefined ? e.finalAmount : (e.FinalAmount !== undefined ? e.FinalAmount : 0),
+          categoryId: e.categoryId || e.CategoryId || '',
+          description: e.description || e.Description || 'No Description',
+          notes: e.notes || e.Notes || e.reference || e.Reference || '',
+          reference: e.reference || e.Reference || e.notes || e.Notes || ''
+        }));
+        setExpenses(mappedItems);
       } catch (err) {
         console.error("Error fetching dashboard data:", err);
       } finally {
@@ -414,12 +427,15 @@ export default function Dashboard() {
     </div>
   );
 
+  const settings = useMemo(() => activeBusiness ? getBusinessSettings(activeBusiness) : null, [activeBusiness]);
+  const isBudgetingEnabled = settings?.isBudgetingEnabled ?? true;
+
   return (
     <div className="space-y-8 pb-20">
 
 
       {/* KPI SNAPSHOT */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-6", isBudgetingEnabled ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
         {(() => {
           const isPersonal = summary.isPersonal;
           
@@ -443,113 +459,60 @@ export default function Dashboard() {
           const budgetingProgress = summary.totalBudget > 0 ? Math.min(100, (summary.totalSpent / summary.totalBudget) * 100) : 0;
           const withinBudget = summary.totalSpent <= summary.totalBudget;
 
-          const personalKpis = [
+          const kpis: any[] = [
             { 
-              label: 'Financial Freedom', 
-              value: ffAchieved ? 'Achieved' : `${ffPercent.toFixed(0)}%`, 
-              sub: `${formatCurrency(displayPassive, summary.currency)} / ${formatCurrency(displayEssential, summary.currency)}`, 
+              label: isPersonal ? 'Income' : 'Revenue', 
+              value: formatCurrency(summary.totalIncome, summary.currency), 
+              sub: 'Total Inflow', 
               icon: TrendingUp, 
+              color: 'text-white', 
+              bg: 'bg-white/20',
+              cardBg: 'bg-gradient-to-br from-[#86BC24] to-[#6DA31A]',
+              labelColor: 'text-white/70',
+              valueColor: 'text-white',
+              subColor: 'text-white/60'
+            },
+            { 
+              label: isPersonal ? 'Expense' : 'Expenses', 
+              value: formatCurrency(summary.totalExpenses, summary.currency), 
+              sub: 'Total Outflow', 
+              icon: ArrowDownRight, 
+              color: 'text-white', 
+              bg: 'bg-white/20',
+              cardBg: 'bg-gradient-to-br from-rose-500 to-red-700',
+              labelColor: 'text-white/70',
+              valueColor: 'text-white',
+              subColor: 'text-white/60'
+            },
+            { 
+              label: isPersonal ? 'Savings' : 'Profit', 
+              value: formatCurrency(netSavings, summary.currency), 
+              sub: isPersonal ? `${savingsRate.toFixed(1)}% Savings Rate` : `${(summary.totalIncome > 0 ? (netSavings / summary.totalIncome) * 100 : 0).toFixed(1)}% Margin`, 
+              icon: isPositiveSavings ? ArrowUpRight : ArrowDownRight, 
+              color: 'text-white', 
+              bg: 'bg-white/20',
+              cardBg: 'bg-gradient-to-br from-blue-600 to-indigo-800',
+              labelColor: 'text-white/70',
+              valueColor: 'text-white',
+              subColor: 'text-white/60'
+            }
+          ];
+
+          if (isBudgetingEnabled) {
+            kpis.push({
+              label: 'Budget', 
+              value: formatCurrency(summary.totalSpent, summary.currency), 
+              sub: `${budgetingProgress.toFixed(0)}% of ${formatCurrency(summary.totalBudget, summary.currency)} limit`, 
+              icon: PieChartIcon, 
               color: 'text-white', 
               bg: 'bg-white/20',
               cardBg: 'bg-gradient-to-br from-purple-600 to-indigo-700',
               labelColor: 'text-white/70',
               valueColor: 'text-white',
               subColor: 'text-white/60',
-              tooltip: "Financial Freedom achieved when Passive Income exceeds Essential Expenses",
-              hasSettings: true
-            },
-            { 
-              label: 'Budgeting', 
-              value: formatCurrency(summary.totalSpent, summary.currency), 
-              sub: `${budgetingProgress.toFixed(0)}% of ${formatCurrency(summary.totalBudget, summary.currency)}`, 
-              icon: PieChartIcon, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-rose-500 to-red-700',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60',
               progressBar: budgetingProgress
-            },
-            { 
-              label: 'Savings', 
-              value: formatCurrency(netSavings, summary.currency), 
-              sub: `${savingsRate.toFixed(1)}% Savings Rate`, 
-              icon: isPositiveSavings ? ArrowUpRight : ArrowDownRight, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-[#86BC24] to-[#6DA31A]',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60'
-            },
-            { 
-              label: 'Net Worth', 
-              value: formatCurrency(summary.netWorth, summary.currency), 
-              sub: 'Assets - Liabilities', 
-              icon: Activity, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-blue-600 to-blue-800',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60'
-            },
-          ];
-
-          const businessKpis = [
-            { 
-              label: 'Budgeting', 
-              value: formatCurrency(summary.totalSpent, summary.currency), 
-              sub: `${budgetingProgress.toFixed(0)}% of limit`, 
-              icon: PieChartIcon, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-rose-500 to-red-700',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60',
-              progressBar: budgetingProgress
-            },
-            { 
-              label: 'Profit', 
-              value: formatCurrency(netSavings, summary.currency), 
-              sub: `${(summary.totalIncome > 0 ? (netSavings / summary.totalIncome) * 100 : 0).toFixed(1)}% Margin`, 
-              icon: isPositiveSavings ? ArrowUpRight : ArrowDownRight, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-[#86BC24] to-[#6DA31A]',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60'
-            },
-            { 
-              label: 'Revenue', 
-              value: formatCurrency(summary.totalIncome, summary.currency), 
-              sub: 'Total Inflow', 
-              icon: TrendingUp, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-indigo-600 to-indigo-800',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60'
-            },
-            { 
-              label: 'Net Worth', 
-              value: formatCurrency(summary.netWorth, summary.currency), 
-              sub: 'Asset Position', 
-              icon: Activity, 
-              color: 'text-white', 
-              bg: 'bg-white/20',
-              cardBg: 'bg-gradient-to-br from-blue-600 to-blue-800',
-              labelColor: 'text-white/70',
-              valueColor: 'text-white',
-              subColor: 'text-white/60'
-            },
-          ];
-
-          const kpis = isPersonal ? personalKpis : businessKpis;
+            });
+          }
 
           return kpis.map((kpi: any, idx) => (
             <div 

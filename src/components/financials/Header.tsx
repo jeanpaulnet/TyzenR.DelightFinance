@@ -82,8 +82,8 @@ export default function Header({ onOpenSidebar, onSettingsClick, onAddBusinessCl
               <div className="flex flex-col flex-1 min-w-0">
                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Business</span>
                  <span 
-                   className="text-base font-bold truncate leading-tight transition-colors duration-300"
-                   style={{ color: activeBusiness ? (getBusinessSettings(activeBusiness).foreColor || '#0f172a') : '#0f172a' }}
+                   className="text-base font-extrabold truncate leading-tight transition-colors duration-300"
+                   style={{ color: activeBusiness ? (getBusinessSettings(activeBusiness).foreColor || (activeBusiness as any).color || '#86BC24') : '#86BC24' }}
                  >
                     {activeBusiness?.name || 'Select Business'}
                  </span>

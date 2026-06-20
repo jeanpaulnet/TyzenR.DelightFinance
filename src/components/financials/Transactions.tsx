@@ -19,13 +19,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import ExpenseUpload from './ExpenseUpload';
 import { BudgetBarChart } from '../ui/FinancialCharts';
 
-function TransactionRow({ exp, settings, categoryMap, currencyCode, onEdit, onDelete }: { 
+function TransactionRow({ exp, settings, categoryMap, currencyCode, onEdit, onDelete, showGstColumns }: { 
   exp: any, 
   settings: any, 
   categoryMap: Map<string, any>, 
   currencyCode: string,
   onEdit: (exp: any) => void,
-  onDelete: (id: string, desc: string) => void
+  onDelete: (id: string, desc: string) => void,
+  showGstColumns?: boolean
 }) {
   return (
     <tr key={exp.id} className="group hover:bg-slate-50/80 transition-colors">
@@ -59,7 +60,7 @@ function TransactionRow({ exp, settings, categoryMap, currencyCode, onEdit, onDe
           {formatCurrency(exp.amount, currencyCode)}
         </span>
       </td>
-      {settings?.isGstEnabled && (
+      {settings?.isGstEnabled && showGstColumns && (
         <>
           <td className="px-6 py-4 whitespace-nowrap">
             <span className="text-sm font-bold text-red-500 leading-none">
@@ -111,12 +112,15 @@ export default function Transactions() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category' | 'description'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [showGstColumns, setShowGstColumns] = useState(false);
   
   // CRUD state
   const [autoShow, setAutoShow] = useState(() => {
     return localStorage.getItem('delight_auto_show_transaction') !== 'false';
   });
-  const [isAdding, setIsAdding] = useState(false);
+  const [isAdding, setIsAdding] = useState(() => {
+    return localStorage.getItem('delight_auto_show_transaction') !== 'false';
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -162,9 +166,23 @@ export default function Transactions() {
         searchText: debouncedSearch
       });
       
+      const rawItems = res.data.items || res.data.Items || [];
+      const mappedItems = rawItems.map((e: any) => ({
+        ...e,
+        id: e.id || e.Id,
+        date: e.date || e.Date || '',
+        amount: e.amount !== undefined ? e.amount : (e.Amount !== undefined ? e.Amount : 0),
+        deductions: e.deductions !== undefined ? e.deductions : (e.Deductions !== undefined ? e.Deductions : 0),
+        finalAmount: e.finalAmount !== undefined ? e.finalAmount : (e.FinalAmount !== undefined ? e.FinalAmount : 0),
+        categoryId: e.categoryId || e.CategoryId || '',
+        description: e.description || e.Description || 'No Description',
+        notes: e.notes || e.Notes || e.reference || e.Reference || '',
+        reference: e.reference || e.Reference || e.notes || e.Notes || ''
+      }));
+
       setPagedData({
-        items: res.data.items || [],
-        totalCount: res.data.totalCount || 0
+        items: mappedItems,
+        totalCount: res.data.totalCount || res.data.TotalCount || 0
       });
     } catch (err) {
       console.error("Error fetching paged transactions:", err);
@@ -288,7 +306,8 @@ export default function Transactions() {
     return pagedData.items.map(e => ({
       ...e,
       description: e.description || 'No Description',
-      reference: e.reference || ''
+      reference: e.reference || '',
+      notes: e.notes || ''
     }));
   }, [pagedData.items]);
 
@@ -502,8 +521,21 @@ export default function Transactions() {
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
-        <div>
+        <div className="flex items-center gap-4">
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Transactions</h1>
+          {settings?.isGstEnabled && (
+            <label className="flex items-center gap-2 cursor-pointer select-none bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl border border-slate-200 transition-all shadow-sm shrink-0">
+              <input 
+                type="checkbox" 
+                checked={showGstColumns}
+                onChange={(e) => setShowGstColumns(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] bg-white transition-all cursor-pointer"
+              />
+              <span className="text-[11px] font-bold uppercase tracking-wider leading-none text-slate-600">
+                Show GST/POST-GST
+              </span>
+            </label>
+          )}
         </div>
         <div className="flex flex-1 max-w-md relative group">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#86BC24] transition-colors" size={16} />
@@ -537,7 +569,7 @@ export default function Transactions() {
             exit={{ opacity: 0, y: -10 }}
             className="bg-[#86BC24] rounded-xl p-6 shadow-lg border-none"
           >
-              <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-white uppercase tracking-wider">
                 New Transaction
               </h2>
@@ -656,14 +688,36 @@ export default function Transactions() {
                   className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm placeholder:text-slate-300"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Notes</label>
-                <input 
-                  value={formData.notes}
-                  onChange={e => setFormData({...formData, notes: e.target.value})}
-                  placeholder="Notes or Receipt ID"
-                  className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm placeholder:text-slate-300"
-                />
+              <div className="space-y-2 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-white uppercase tracking-widest font-bold">Notes</label>
+                  <input 
+                    value={formData.notes}
+                    onChange={e => setFormData({...formData, notes: e.target.value})}
+                    placeholder="Notes or Receipt ID"
+                    className="w-full p-2.5 bg-white border border-white/20 rounded-lg outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-900 transition-all text-sm placeholder:text-slate-300"
+                  />
+                </div>
+                <div className="pt-2 select-none">
+                  <label 
+                    title="Always show the New Transaction when page loads for faster transaction recordings"
+                    className="flex items-center gap-2 cursor-pointer select-none text-white/90 hover:text-white transition-all bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-lg border border-white/10 w-fit"
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={autoShow}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setAutoShow(val);
+                        localStorage.setItem('delight_auto_show_transaction', val.toString());
+                      }}
+                      className="w-4 h-4 rounded border-white/30 text-slate-950 focus:ring-slate-950 bg-white/20 transition-all cursor-pointer"
+                    />
+                    <span className="text-[10px] font-bold uppercase tracking-widest leading-none">
+                      Auto Show
+                    </span>
+                  </label>
+                </div>
               </div>
             </form>
           </motion.div>
@@ -707,14 +761,14 @@ export default function Transactions() {
                   onClick={() => toggleSort('amount')}
                 >
                   <div className="flex items-center gap-1">
-                    {settings?.isGstEnabled ? 'Total Amount' : 'Amount'}
+                    Amount
                     <ArrowUpDown size={12} className={cn(sortField === 'amount' ? "text-[#86BC24]" : "text-white/30")} />
                   </div>
                 </th>
-                {settings?.isGstEnabled && (
+                {settings?.isGstEnabled && showGstColumns && (
                   <>
-                    <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">Deductions</th>
-                    <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">Final Amount</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">GST</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest font-bold">POST-GST</th>
                   </>
                 )}
                 <th className="px-6 py-4 text-[10px] font-bold text-white uppercase tracking-widest">Notes</th>
@@ -724,7 +778,7 @@ export default function Transactions() {
             <tbody className="divide-y divide-slate-100">
               {isFetching ? (
                 <tr>
-                   <td colSpan={settings?.isGstEnabled ? 8 : 6} className="py-20 text-center">
+                   <td colSpan={settings?.isGstEnabled && showGstColumns ? 8 : 6} className="py-20 text-center">
                       <div className="flex flex-col items-center gap-3">
                          <div className="w-8 h-8 border-4 border-[#86BC24] border-t-transparent rounded-full animate-spin" />
                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Transactions...</p>
@@ -736,7 +790,7 @@ export default function Transactions() {
                   {/* Income Section */}
                   {tableExpenses.filter(e => categoryMap.get(e.categoryId)?.type === 'Income').length > 0 && (
                     <tr className="bg-gradient-to-r from-[#4CBB17] to-[#2E7D32]">
-                      <td colSpan={settings?.isGstEnabled ? 8 : 6} className="px-6 py-2 border-y border-white/10">
+                      <td colSpan={settings?.isGstEnabled && showGstColumns ? 8 : 6} className="px-6 py-2 border-y border-white/10">
                         <div className="flex items-center gap-3">
                           <span className="text-white text-[10px] font-black uppercase tracking-[0.25em]">
                             income
@@ -754,13 +808,14 @@ export default function Transactions() {
                       currencyCode={currencyCode} 
                       onEdit={startEdit} 
                       onDelete={(id, desc) => { setDeletingId(id); setDeletingDescription(desc); }} 
+                      showGstColumns={showGstColumns}
                     />
                   ))}
 
                   {/* Expenses Section */}
                   {tableExpenses.filter(e => categoryMap.get(e.categoryId)?.type === 'Expense').length > 0 && (
                     <tr className="bg-gradient-to-r from-[#EF5350] to-[#C62828]">
-                      <td colSpan={settings?.isGstEnabled ? 8 : 6} className="px-6 py-2 border-y border-white/10">
+                      <td colSpan={settings?.isGstEnabled && showGstColumns ? 8 : 6} className="px-6 py-2 border-y border-white/10">
                          <div className="flex items-center gap-3">
                            <span className="text-white text-[10px] font-black uppercase tracking-[0.25em]">
                              EXPENSE
@@ -778,6 +833,7 @@ export default function Transactions() {
                       currencyCode={currencyCode} 
                       onEdit={startEdit} 
                       onDelete={(id, desc) => { setDeletingId(id); setDeletingDescription(desc); }} 
+                      showGstColumns={showGstColumns}
                     />
                   ))}
                 </>
@@ -790,11 +846,12 @@ export default function Transactions() {
                   currencyCode={currencyCode} 
                   onEdit={startEdit} 
                   onDelete={(id, desc) => { setDeletingId(id); setDeletingDescription(desc); }} 
+                  showGstColumns={showGstColumns}
                 />
               ))}
               {!isFetching && tableExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={settings?.isGstEnabled ? 8 : 6} className="py-20 text-center space-y-4">
+                  <td colSpan={settings?.isGstEnabled && showGstColumns ? 8 : 6} className="py-20 text-center space-y-4">
                     <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300">
                       <CalendarIcon size={32} />
                     </div>
@@ -955,17 +1012,17 @@ export default function Transactions() {
                     </div>
                   </div>
                   {settings?.isGstEnabled && (
-                    <>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest">GST %</label>
+                    <div className="col-span-2 grid grid-cols-12 gap-3">
+                      <div className="col-span-3 space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] block truncate">GST %</label>
                         <input 
                           type="number" value={formData.gstRate}
                           onChange={e => setFormData({...formData, gstRate: e.target.value})}
                           className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#86BC24] transition-all font-mono"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest text-[#86BC24]">Deductions</label>
+                      <div className="col-span-4 space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] block truncate">GST Amount</label>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
                             {getCurrencySymbol(currencyCode)}
@@ -973,12 +1030,12 @@ export default function Transactions() {
                           <input 
                             readOnly
                             value={(parseFloat(formData.amount || '0') - parseFloat(formData.actualAmount || '0')).toFixed(2)}
-                            className="w-full pl-12 pr-4 py-3 bg-[#86BC24]/5 border border-slate-200 rounded-xl text-sm outline-none transition-all font-mono text-[#86BC24] cursor-not-allowed"
+                            className="w-full pl-10 pr-3 py-3 bg-[#86BC24]/5 border border-slate-200 rounded-xl text-sm outline-none transition-all font-mono text-[#86BC24] cursor-not-allowed"
                           />
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-[#86BC24] uppercase tracking-widest text-[#86BC24]">Final Amount</label>
+                      <div className="col-span-5 space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] block truncate">POST-GST</label>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono italic text-xs">
                             {getCurrencySymbol(currencyCode)}
@@ -986,12 +1043,12 @@ export default function Transactions() {
                           <input 
                             readOnly
                             value={formData.actualAmount}
-                            className="w-full pl-12 pr-4 py-3 bg-[#86BC24]/5 border border-slate-200 rounded-xl text-sm outline-none transition-all font-mono text-[#86BC24] cursor-not-allowed"
+                            className="w-full pl-10 pr-3 py-3 bg-[#86BC24]/5 border border-slate-200 rounded-xl text-sm outline-none transition-all font-mono text-[#86BC24] cursor-not-allowed"
                             title="Final amount after tax"
                           />
                         </div>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
 
@@ -1101,26 +1158,6 @@ export default function Transactions() {
         )}
       </AnimatePresence>
 
-      <div className="fixed bottom-6 right-6 z-[100]">
-        <label 
-          title="Always show the New Transaction when page loads for faster transaction recordings"
-          className="flex items-center gap-2 cursor-pointer group/toggle bg-white/90 backdrop-blur-sm border border-slate-200 rounded-full px-4 py-2 shadow-lg hover:shadow-xl hover:border-[#86BC24] transition-all"
-        >
-          <input 
-            type="checkbox" 
-            checked={autoShow}
-            onChange={(e) => {
-              const val = e.target.checked;
-              setAutoShow(val);
-              localStorage.setItem('delight_auto_show_transaction', val.toString());
-            }}
-            className="w-4 h-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] transition-all cursor-pointer"
-          />
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/toggle:text-[#86BC24] transition-colors">
-            Auto Show
-          </span>
-        </label>
-      </div>
     </div>
   );
 }

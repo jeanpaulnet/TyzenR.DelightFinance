@@ -75,6 +75,10 @@ async function startServer() {
       req.body.BusinessSettingsJson = jsonStr;
     }
 
+    // Normalize name and isDefault for consistency
+    const name = req.body.Name ?? req.body.name;
+    const isDefault = req.body.IsDefault ?? req.body.isDefault;
+
     if (id) {
        const index = MOCK_DATA.businesses.findIndex(b => b.id === id);
        if (index >= 0) {
@@ -82,15 +86,27 @@ async function startServer() {
            ...MOCK_DATA.businesses[index],
            ...req.body,
            id: id,
-           updatedAt: new Date().toISOString()
+           Id: id,
+           name: name ?? MOCK_DATA.businesses[index].name,
+           Name: name ?? MOCK_DATA.businesses[index].name,
+           isDefault: isDefault !== undefined ? isDefault : MOCK_DATA.businesses[index].isDefault,
+           IsDefault: isDefault !== undefined ? isDefault : MOCK_DATA.businesses[index].isDefault,
+           updatedAt: new Date().toISOString(),
+           UpdatedAt: new Date().toISOString()
          };
          return res.json(MOCK_DATA.businesses[index]);
        }
     }
 
+    const newId = Math.random().toString(36).substr(2, 9);
     const biz = { 
       ...req.body, 
-      id: Math.random().toString(36).substr(2, 9),
+      id: newId,
+      Id: newId,
+      name: name,
+      Name: name,
+      isDefault: isDefault !== undefined ? isDefault : false,
+      IsDefault: isDefault !== undefined ? isDefault : false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

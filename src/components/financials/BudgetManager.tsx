@@ -345,6 +345,19 @@ export default function BudgetManager() {
         </div>
         
         <div className="flex flex-wrap items-center gap-4">
+          <button 
+            type="button"
+            onClick={() => {
+              setNewBudget({ name: '', amount: 0, type: 'Expense', gstRate: 0 });
+              setIsAdding(true);
+              setDuplicateError(null);
+            }}
+            className="h-11 px-5 bg-[#86BC24] hover:bg-[#75A51F] text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
+          >
+            <Plus size={16} />
+            Add Category
+          </button>
+
           <div className="flex items-center gap-4 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
             <div className="flex items-center">
               <button 
@@ -506,11 +519,12 @@ export default function BudgetManager() {
                     {items.map((stat) => (
                       <div key={stat.data.id} className={cn(
                         "border rounded-lg p-2.5 shadow-sm group transition-all relative overflow-hidden flex flex-col justify-center min-h-[70px]",
+                        editingId === stat.data.id ? "bg-white border-slate-200 text-slate-800" :
                         stat.isActive ? (
-                          stat.data.type === 'Income' ? "bg-green-50 border-green-100/80 hover:border-green-300" :
-                          stat.data.type === 'Asset' ? "bg-blue-50 border-blue-100/80 hover:border-blue-300" :
-                          stat.data.type === 'Liability' ? "bg-orange-50 border-orange-100/80 hover:border-orange-300" :
-                          "bg-red-50 border-red-100/80 hover:border-red-300" // Expense
+                          stat.data.type === 'Income' ? "bg-gradient-to-br from-emerald-500 via-emerald-600 to-green-700 text-white border-emerald-600 hover:border-emerald-500 shadow-sm hover:shadow-md hover:scale-[1.01]" :
+                          stat.data.type === 'Asset' ? "bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white border-blue-600 hover:border-blue-500 shadow-sm hover:shadow-md hover:scale-[1.01]" :
+                          stat.data.type === 'Liability' ? "bg-gradient-to-br from-orange-400 via-orange-500 to-amber-600 text-white border-orange-500 hover:border-orange-400 shadow-sm hover:shadow-md hover:scale-[1.01]" :
+                          "bg-gradient-to-br from-rose-500 via-rose-600 to-red-700 text-white border-rose-600 hover:border-rose-500 shadow-sm hover:shadow-md hover:scale-[1.01]" // Expense
                         ) : "bg-white border-dashed border-slate-200 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 bg-slate-50/50"
                       )}>
                         {editingId === stat.data.id ? (
@@ -608,19 +622,19 @@ export default function BudgetManager() {
                           </form>
                         ) : (
                           <>
-                            <div className="absolute top-0 right-0 p-2 flex gap-1 transition-opacity">
+                            <div className="absolute top-0 right-0 p-2 flex gap-1 transition-opacity z-10">
                                 {stat.isActive ? (
                                   <>
                                     <button 
                                       onClick={() => startEdit(stat.data)} 
-                                      className="p-1 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
+                                      className="p-1 text-white/80 hover:text-white hover:bg-white/20 rounded transition-all"
                                       title="Edit Category"
                                     >
                                         <Edit2 size={14} />
                                     </button>
                                     <button 
                                       onClick={() => setDeleteConfirm({ id: stat.data.id, category: stat.name, isActive: true })} 
-                                      className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                                      className="p-1 text-white/80 hover:text-white hover:bg-white/20 rounded transition-all"
                                       title="Delete Category"
                                     >
                                         <Trash2 size={14} />
@@ -639,14 +653,14 @@ export default function BudgetManager() {
                                   </div>
                                 )}
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 w-full pr-12">
                                <div className={cn(
                                  "w-8 h-8 rounded border flex items-center justify-center transition-colors shadow-sm shrink-0",
                                  stat.isActive ? (
-                                   stat.data.type === 'Income' ? "text-green-600 border-green-200 bg-white" :
-                                   stat.data.type === 'Asset' ? "text-blue-600 border-blue-200 bg-white" :
-                                   stat.data.type === 'Liability' ? "text-orange-600 border-orange-200 bg-white" :
-                                   "text-red-600 border-red-200 bg-white"
+                                   stat.data.type === 'Income' ? "text-emerald-700 border-white/10 bg-white" :
+                                   stat.data.type === 'Asset' ? "text-blue-700 border-white/10 bg-white" :
+                                   stat.data.type === 'Liability' ? "text-amber-700 border-white/10 bg-white" :
+                                   "text-rose-700 border-white/10 bg-white"
                                  ) : "text-slate-300 border-slate-200 bg-white/50"
                                )}>
                                   {(() => {
@@ -660,27 +674,24 @@ export default function BudgetManager() {
                                   })()}
                                </div>
                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold text-[#1E293B] tracking-tight leading-tight truncate">{stat.name}</p>
+                                  <p className={cn(
+                                    "text-sm font-bold tracking-tight leading-tight truncate",
+                                    stat.isActive ? "text-white" : "text-[#1E293B]"
+                                  )}>{stat.name}</p>
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <span className={cn(
-                                      "text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full border leading-none bg-white/80 backdrop-blur-sm shadow-xs",
+                                      "text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full border leading-none bg-white/90 backdrop-blur-sm shadow-xs",
                                       stat.isActive ? (
-                                        stat.data.type === 'Income' ? "text-green-600 border-green-200" :
-                                        stat.data.type === 'Asset' ? "text-blue-600 border-blue-200" :
-                                        stat.data.type === 'Liability' ? "text-orange-600 border-orange-200" :
-                                        "text-red-600 border-red-200"
+                                        stat.data.type === 'Income' ? "text-emerald-700 border-emerald-100/30" :
+                                        stat.data.type === 'Asset' ? "text-indigo-700 border-indigo-100/30" :
+                                        stat.data.type === 'Liability' ? "text-amber-700 border-amber-100/30" :
+                                        "text-rose-700 border-rose-100/30"
                                       ) : "text-slate-300 border-slate-100"
                                     )}>
                                       {stat.isActive ? (stat.data.type || 'Expense') : 'General'}
                                     </span>
                                     {stat.isActive && (
-                                      <span className={cn(
-                                        "text-[10px] font-mono font-bold",
-                                        stat.data.type === 'Income' ? "text-green-600" :
-                                        stat.data.type === 'Asset' ? "text-blue-600" :
-                                        stat.data.type === 'Liability' ? "text-orange-600" :
-                                        "text-[#86BC24]" // Expense
-                                      )}>
+                                      <span className="text-[10px] font-mono font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">
                                         {formatCurrency(stat.data.amount, currencyCode)}
                                       </span>
                                     )}
@@ -695,7 +706,7 @@ export default function BudgetManager() {
                                     <Plus size={10} />
                                     Set
                                   </button>
-                               )}
+                                )}
                             </div>
                           </>
                         )}
