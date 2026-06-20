@@ -309,6 +309,8 @@ export default function ExpenseUpload() {
   const [isDragging, setIsDragging] = useState(false);
 
   // Column Mapping states
+  const [rememberMapping, setRememberMapping] = useState<boolean>(true);
+  const [showCsvPreview, setShowCsvPreview] = useState<boolean>(false);
   const [rawParsedRows, setRawParsedRows] = useState<any[]>([]);
   const [availableHeaders, setAvailableHeaders] = useState<string[]>([]);
   const [mappedDateCol, setMappedDateCol] = useState<string>('');
@@ -1185,6 +1187,24 @@ export default function ExpenseUpload() {
       }
     }
 
+    // check if there is a remembered mapping for this header layout
+    const fingerprint = activeHeaders.join(',');
+    const savedMappingStr = localStorage.getItem(`saved_mapping_${fingerprint}`);
+    if (savedMappingStr) {
+      try {
+        const saved = JSON.parse(savedMappingStr);
+        if (saved.mappedDateCol) dateDefault = saved.mappedDateCol;
+        if (saved.mappedDescCol) descDefault = saved.mappedDescCol;
+        if (saved.mappedRefCol !== undefined) refDefault = saved.mappedRefCol;
+        if (saved.amountMappingType) amtType = saved.amountMappingType;
+        if (saved.mappedAmountCol) amountDefault = saved.mappedAmountCol;
+        if (saved.mappedWithdrawalCol) withdrawalDefault = saved.mappedWithdrawalCol;
+        if (saved.mappedDepositCol) depositDefault = saved.mappedDepositCol;
+      } catch (e) {
+        console.warn("Failed to parse saved mapping from local storage", e);
+      }
+    }
+
     setAvailableHeaders(activeHeaders);
     setRawParsedRows(jsonData);
     
@@ -1195,6 +1215,9 @@ export default function ExpenseUpload() {
     setMappedAmountCol(amountDefault);
     setMappedWithdrawalCol(withdrawalDefault);
     setMappedDepositCol(depositDefault);
+
+    // Reset CSV preview toggle state
+    setShowCsvPreview(false);
 
     setStep('mapping');
     setIsProcessing(false);
@@ -2652,79 +2675,138 @@ export default function ExpenseUpload() {
                   </div>
                 ) : step === 'mapping' ? (
                   <div className="space-y-6 animate-in fade-in duration-200">
-                    <div className="p-4 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-xl flex items-center gap-3">
-                      <Settings2 size={20} className="text-[#86BC24]" />
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900 font-sans tracking-tight">Confirm Column Mapping</h4>
-                        <p className="text-xs text-slate-600">
-                          We mapped columns using automatic heuristics. Please verify and fine-tune formatting before starting parsing.
-                        </p>
+                    <div className="p-4 bg-[#86BC24]/5 border border-[#86BC24]/20 rounded-xl flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <Settings2 size={20} className="text-[#86BC24]" />
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 font-sans tracking-tight">Configure Column Mappings</h4>
+                          <p className="text-xs text-slate-600">
+                            Align CSV/Excel file columns with our local system architecture.
+                          </p>
+                        </div>
                       </div>
+
+                      {/* CSV Preview toggle button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowCsvPreview(!showCsvPreview)}
+                        className={cn(
+                          "px-4 py-2 border rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-xs cursor-pointer select-none",
+                          showCsvPreview 
+                            ? "bg-slate-950 border-slate-950 text-white" 
+                            : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
+                        )}
+                        id="csv-preview-button"
+                      >
+                        <Table size={14} className={showCsvPreview ? "text-white" : "text-[#86BC24]"} />
+                        {showCsvPreview ? "Hide CSV Preview" : "CSV Preview"}
+                      </button>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                      {/* Left: Interactive Field Mappings list */}
-                      <div className="lg:col-span-5 space-y-5 bg-slate-50 p-6 rounded-xl border border-slate-200/60 shadow-sm font-sans">
-                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Column Match Configuration</h3>
-                        
-                        {/* Date Column */}
-                        <div className="space-y-1.5">
-                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                            Date Column <span className="text-red-500">*</span>
-                          </label>
+                    {/* Column Mappings Box */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
+                        FILE-TO-SYSTEM FIELD ALIGNMENT
+                      </h3>
+
+                      {/* Date Mapping Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-50/50 hover:bg-slate-50 border border-slate-150 rounded-xl transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                            <FileText size={16} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-800">Date in file</p>
+                            <p className="text-[10px] text-slate-400 font-medium">Mapped from uploaded spreadsheet date field</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 self-end sm:self-auto">
+                          <ArrowRight size={14} className="text-slate-400 hidden sm:inline" />
+                          <div className="px-2.5 py-1 bg-blue-50 border border-blue-200/60 text-blue-700 rounded-lg text-[10px] font-bold uppercase tracking-wider text-center shrink-0">
+                            Date column
+                          </div>
                           <select
                             value={mappedDateCol}
                             onChange={(e) => setMappedDateCol(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                            className="w-[220px] px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-[#86BC24]"
                           >
-                            <option value="">-- Choose Date Column --</option>
+                            <option value="">-- Choose Column --</option>
                             {availableHeaders.map(h => (
                               <option key={h} value={h}>{h}</option>
                             ))}
                           </select>
                         </div>
+                      </div>
 
-                        {/* Description Column */}
-                        <div className="space-y-1.5 mt-4">
-                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                            Description Column <span className="text-red-500">*</span>
-                          </label>
+                      {/* Description Mapping Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-50/50 hover:bg-slate-50 border border-slate-150 rounded-xl transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                            <FileText size={16} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-800">Description in file</p>
+                            <p className="text-[10px] text-slate-400 font-medium">Mapped from uploaded description/payee details</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 self-end sm:self-auto">
+                          <ArrowRight size={14} className="text-slate-400 hidden sm:inline" />
+                          <div className="px-2.5 py-1 bg-emerald-50 border border-emerald-200/60 text-emerald-700 rounded-lg text-[10px] font-bold uppercase tracking-wider text-center shrink-0">
+                            Description column
+                          </div>
                           <select
                             value={mappedDescCol}
                             onChange={(e) => setMappedDescCol(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                            className="w-[220px] px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-[#86BC24]"
                           >
-                            <option value="">-- Choose Description Column --</option>
+                            <option value="">-- Choose Column --</option>
                             {availableHeaders.map(h => (
                               <option key={h} value={h}>{h}</option>
                             ))}
                           </select>
                         </div>
+                      </div>
 
-                        {/* Reference / Notes Column (Optional) */}
-                        <div className="space-y-1.5 mt-4">
-                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
-                            Reference / Notes Column <span className="text-slate-400 font-normal">(Optional)</span>
-                          </label>
+                      {/* Reference Mapping Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-50/50 hover:bg-slate-50 border border-slate-150 rounded-xl transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                            <FileText size={16} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-800">Reference / Notes in file <span className="text-slate-400 font-normal">(Optional)</span></p>
+                            <p className="text-[10px] text-slate-400 font-medium">Extra transaction markers, IDs, or references</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 self-end sm:self-auto">
+                          <ArrowRight size={14} className="text-slate-400 hidden sm:inline" />
+                          <div className="px-2.5 py-1 bg-purple-50 border border-purple-200/60 text-purple-700 rounded-lg text-[10px] font-bold uppercase tracking-wider text-center shrink-0">
+                            Reference column
+                          </div>
                           <select
                             value={mappedRefCol}
                             onChange={(e) => setMappedRefCol(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                            className="w-[220px] px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-[#86BC24]"
                           >
-                            <option value="">-- Skip Column / None --</option>
+                            <option value="">-- None / Skip --</option>
                             {availableHeaders.map(h => (
                               <option key={h} value={h}>{h}</option>
                             ))}
                           </select>
                         </div>
+                      </div>
 
-                        {/* Amounts Configuration */}
-                        <div className="border-t border-slate-200/80 pt-4 mt-6">
-                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                            Amount Formats
-                          </label>
-                          
-                          <div className="flex flex-col gap-2 mb-4">
+                      {/* Toggle & Amount Block */}
+                      <div className="p-4 bg-slate-50/20 border border-slate-150 rounded-xl space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/60 p-3 rounded-lg border border-slate-100">
+                          <div>
+                            <p className="text-xs font-bold text-slate-800">Amount Layout Type</p>
+                            <p className="text-[10px] text-slate-400">Choose single column or dual debit/credit column format</p>
+                          </div>
+                          <div className="flex gap-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input 
                                 type="radio" 
@@ -2746,71 +2828,112 @@ export default function ExpenseUpload() {
                                 onChange={() => setAmountMappingType('dual')}
                                 className="text-[#86BC24] focus:ring-[#86BC24] h-4 w-4"
                               />
-                              <span className="text-xs font-bold text-slate-700">Dual Column (Withdrawal/Deposit)</span>
+                              <span className="text-xs font-bold text-slate-700">Dual Columns (Withdrawal/Deposit)</span>
                             </label>
                           </div>
+                        </div>
 
-                          {amountMappingType === 'single' ? (
-                            <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1">
-                              <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                                Amount Column <span className="text-red-500">*</span>
-                              </label>
+                        {amountMappingType === 'single' ? (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                                <FileText size={16} />
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-800">Amount in file</p>
+                                <p className="text-[10px] text-slate-400 font-medium">Positive values are income, negative are expenses</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 self-end sm:self-auto">
+                              <ArrowRight size={14} className="text-slate-400 hidden sm:inline" />
+                              <div className="px-2.5 py-1 bg-amber-50 border border-amber-200/60 text-amber-700 rounded-lg text-[10px] font-bold uppercase tracking-wider text-center shrink-0">
+                                Amount column
+                              </div>
                               <select
                                 value={mappedAmountCol}
                                 onChange={(e) => setMappedAmountCol(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
+                                className="w-[220px] px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-[#86BC24]"
                               >
-                                <option value="">-- Choose Amount Column --</option>
+                                <option value="">-- Choose Column --</option>
                                 {availableHeaders.map(h => (
                                   <option key={h} value={h}>{h}</option>
                                 ))}
                               </select>
-                              <p className="text-[10px] text-slate-400 font-medium mt-1 leading-normal">
-                                Positive values are treated as Deposits/Income; negative values are treated as Expenses.
-                              </p>
                             </div>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-3 mt-2 animate-in fade-in slide-in-from-top-1">
-                              <div className="space-y-1.5">
-                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                                  Withdrawal / Debit <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                  value={mappedWithdrawalCol}
-                                  onChange={(e) => setMappedWithdrawalCol(e.target.value)}
-                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
-                                >
-                                  <option value="">-- Choose Withdrawal --</option>
-                                  {availableHeaders.map(h => (
-                                    <option key={h} value={h}>{h}</option>
-                                  ))}
-                                </select>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                            {/* Withdrawals */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 bg-white rounded-lg border border-slate-100">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                                  <FileText size={16} />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-bold text-slate-800">Withdrawal in file</p>
+                                  <p className="text-[9px] text-slate-400">Debit / Expense Outflow</p>
+                                </div>
                               </div>
-                              <div className="space-y-1.5">
-                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                                  Deposit / Credit <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                  value={mappedDepositCol}
-                                  onChange={(e) => setMappedDepositCol(e.target.value)}
-                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-[#86BC24] focus:ring-1 focus:ring-[#86BC24] outline-none"
-                                >
-                                  <option value="">-- Choose Deposit --</option>
-                                  {availableHeaders.map(h => (
-                                    <option key={h} value={h}>{h}</option>
-                                  ))}
-                                </select>
-                              </div>
+                              <select
+                                value={mappedWithdrawalCol}
+                                onChange={(e) => setMappedWithdrawalCol(e.target.value)}
+                                className="w-[180px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-[#86BC24]"
+                              >
+                                <option value="">-- Choose Column --</option>
+                                {availableHeaders.map(h => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
                             </div>
-                          )}
-                        </div>
+
+                            {/* Deposits */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 bg-white rounded-lg border border-slate-100">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
+                                  <FileText size={16} />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-bold text-slate-800">Deposit in file</p>
+                                  <p className="text-[9px] text-slate-400">Credit / Income Inflow</p>
+                                </div>
+                              </div>
+                              <select
+                                value={mappedDepositCol}
+                                onChange={(e) => setMappedDepositCol(e.target.value)}
+                                className="w-[180px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-[#86BC24]"
+                              >
+                                <option value="">-- Choose Column --</option>
+                                {availableHeaders.map(h => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Right: Actual Spreadsheet File Sample Data */}
-                      <div className="lg:col-span-7 space-y-4">
-                        <div className="flex items-center justify-between">
+                      {/* Remember Mapping Checkbox */}
+                      <div className="flex items-center gap-2.5 pt-2 border-t border-slate-100">
+                        <input 
+                          type="checkbox" 
+                          id="remember-mapping-checkbox"
+                          checked={rememberMapping}
+                          onChange={(e) => setRememberMapping(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-[#86BC24] focus:ring-[#86BC24] cursor-pointer"
+                        />
+                        <label htmlFor="remember-mapping-checkbox" className="text-xs font-bold text-slate-600 cursor-pointer select-none">
+                          Remember Mapping (Auto-fill matching formats next time)
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* CSV Preview Collapsed / Expanded View */}
+                    {showCsvPreview && (
+                      <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-4">
                           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">
-                            Spreadsheet Source Sample Rows
+                            Spreadsheet Source Sample Rows (CSV Preview)
                           </h3>
                           <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
                             Showing up to 4 rows
@@ -2818,7 +2941,7 @@ export default function ExpenseUpload() {
                         </div>
                         
                         <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
-                          <div className="overflow-x-auto">
+                          <div className="overflow-x-auto font-sans">
                             <table className="w-full text-left text-xs border-collapse font-mono">
                               <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
@@ -2883,11 +3006,11 @@ export default function ExpenseUpload() {
                         <div className="bg-slate-50 p-4 border border-slate-200/50 rounded-lg flex items-start gap-2.5">
                           <HelpCircle size={16} className="text-slate-400 shrink-0 mt-0.5" />
                           <p className="text-[11px] text-slate-500 leading-normal">
-                            The visual sample above reflects rows from your uploaded spreadsheet file. Choose dropdown choices on the left to map them. Highlighted table columns correspond directly with your mapped selections.
+                            This preview reflects rows from your uploaded spreadsheet file. Choosing dropdown choices on the left highlights matching headers in this preview.
                           </p>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {feedback && step === 'mapping' && (
                       <div className={cn(
@@ -3397,6 +3520,22 @@ export default function ExpenseUpload() {
                         
                         setFeedback(null);
                         
+                        // Save mappings if Remember Mapping is selected
+                        const fingerprint = availableHeaders.join(',');
+                        if (rememberMapping) {
+                          localStorage.setItem(`saved_mapping_${fingerprint}`, JSON.stringify({
+                            mappedDateCol,
+                            mappedDescCol,
+                            mappedRefCol,
+                            amountMappingType,
+                            mappedAmountCol,
+                            mappedWithdrawalCol,
+                            mappedDepositCol
+                          }));
+                        } else {
+                          localStorage.removeItem(`saved_mapping_${fingerprint}`);
+                        }
+
                         // Proceed to process transactions with chosen mappings
                         await processRawRows(rawParsedRows, availableHeaders, {
                           dateCol: mappedDateCol,
